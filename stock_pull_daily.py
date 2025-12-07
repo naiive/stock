@@ -49,7 +49,7 @@ CONFIG = {
     # --- 抽样/并发 ---
     "SAMPLE_SIZE": 0,  # 0 或 None 表示全量，>0 表示随机抽样数量
     "MAX_WORKERS": 8,  # 线程数
-    "REQUEST_TIMEOUT": 25,  # AkShare 单次请求整体超时保护（秒）
+    "REQUEST_TIMEOUT": 30,  # AkShare 单次请求整体超时保护（秒）
     "CACHE_FILE": "stock_list_cache.json",
 }
 

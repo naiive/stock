@@ -189,7 +189,7 @@ def filter_stock_list(df):
     if CONFIG["EXCLUDE_GEM"]:
         mask |= df["code"].str.startswith("300")
     if CONFIG["EXCLUDE_KCB"]:
-        mask |= df["code"].str.startswith("688", "689")
+        mask |= df["code"].str.startswith(("688", "689"))
     if CONFIG["EXCLUDE_BJ"]:
         mask |= df["code"].str.startswith(("8", "4", "92"))
     if CONFIG["EXCLUDE_ST"] and "name" in df.columns:
