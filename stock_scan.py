@@ -88,24 +88,24 @@ CONFIG = {
     "OUTPUT_FOLDER_BASE": "Day_Stocks",  # 结果文件存放的根文件夹
 
     # --- 抽样/并发 ---
-    "SAMPLE_SIZE": 0,  # 0 或 None 表示全量，>0 表示随机抽样数量
+    "SAMPLE_SIZE": 200,  # 0 或 None 表示全量，>0 表示随机抽样数量
     "MAX_WORKERS": 32,
     "REQUEST_TIMEOUT": 15,  # 🆕 **关键：akshare 单次请求整体超时保护（秒）**
 
     # --- 🆕 手动输入 ---
     # 示例: ["600519", "000001", "300751"]。如果非空，则跳过全量扫描。
     "MANUAL_STOCK_LIST": [
-                            "000807",
-                            "000708",
-                            "002830",
-                            "301517",
-                            "000408",
-                            "600879",
-                            "600595",
-                            "601168",
-                            "002595",
-                            "301028",
-                            "002429"
+                            # "000807",
+                            # "000708",
+                            # "002830",
+                            # "301517",
+                            # "000408",
+                            # "600879",
+                            # "600595",
+                            # "601168",
+                            # "002595",
+                            # "301028",
+                            # "002429"
                         ]
 }
 
@@ -412,10 +412,7 @@ def append_today_realtime(df_daily, symbol):
     return df_daily
 
 
-# ============================================================
-# 模块 6：单只股票策略（整合 SQZMOM + MA200 + Pivot + 信号）
-# 关键：akshare 请求增加超时保护
-# ============================================================
+
 def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
     """
     一个辅助函数，在独立的线程中执行 akshare 请求，并使用 Future/wait 实施超时。
@@ -446,6 +443,10 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
             raise e
 
 
+# ============================================================
+# 模块 6：单只股票策略（整合 SQZMOM + MA200 + Pivot + 信号）
+# 关键：akshare 请求增加超时保护
+# ============================================================
 def strategy_single_stock(code, start_date, end_date):
     """
     输入 code: '600519' / '002596' 等六位字符串（不带 sh/sz）
@@ -470,15 +471,12 @@ def strategy_single_stock(code, start_date, end_date):
         # 添加实时数据
         df = append_today_realtime(df, symbol)
 
-        # 需要确保 DataFrame 包含 'date','open','high','low','close','volume' 等列
-        # 若 akshare 返回列名不同，请在此处做适配（common case 已覆盖）
-
-        # 计算 SQZMOM
-        df = squeeze_momentum(df, useTrueRange=CONFIG["SQZ"]["useTrueRange"])
-        last = df.iloc[-1]
+        # --- 核心优化：先计算 MA200、前阻力位和涨幅，只要有一个不满足就直接排除 ---
+        current_close = float(df['close'].iloc[-1])
+        prev_close = float(df['close'].iloc[-2])
+        pct_chg = (current_close - prev_close) / prev_close * 100
 
         # MA200
-        # 确保有足够数据计算
         ma200_series = df['close'].rolling(200).mean()
         if ma200_series.empty or pd.isna(ma200_series.iloc[-1]):
             return None
@@ -490,25 +488,24 @@ def strategy_single_stock(code, start_date, end_date):
             return None
         last_pivot = pivot_series.iloc[-1]
 
-        current_close = float(df['close'].iloc[-1])
-        prev_close = float(df['close'].iloc[-2])
-        pct_chg = (current_close - prev_close) / prev_close * 100
-
+        # 三个策略条件
         condition_trend = current_close > ma200
         condition_break = current_close > last_pivot
         condition_up = pct_chg > 0
 
-        # 初步过滤：不在突破或趋势不符合，直接返回 None
+        # 🟢 短路优化：只要有一个条件不满足，直接返回 None
         if not (condition_trend and condition_break and condition_up):
             return None
+
+        # --- 下面开始计算 SQZMOM ---
+        df = squeeze_momentum(df, useTrueRange=CONFIG["SQZ"]["useTrueRange"])
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
 
         break_strength = (current_close - last_pivot) / last_pivot * 100
 
         # 信号判定
         signal = "无"
-
-        # 取上一根 K
-        prev = df.iloc[-2]
 
         # --- 买入信号 ---
         cond_now_strong_release = (
@@ -549,7 +546,6 @@ def strategy_single_stock(code, start_date, end_date):
         # 捕获 akshare 返回空数据或其他处理异常
         # print(f"[错误] {code} 处理失败: {e} - 类型: {type(e).__name__}")
         return None
-
 
 # ============================================================
 # 模块 7：并发扫描 (Async Scheduler)
