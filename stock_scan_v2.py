@@ -73,6 +73,11 @@ CONFIG = {
     # False: 使用 ak.stock_zh_a_daily (AkShare)
     "USE_LOCAL_MYSQL": True, # 👈 默认使用 AkShare
 
+    # 实时数据开关 (用于控制是否获取今日实时快照)
+    # True: 使用腾讯实时股票全量接口 (fetch_realtime_snapshot)
+    # False: 不使用，跳过实时数据获取（用于离线回测或非交易日）
+    "USE_REAL_TIME_DATA": False,
+
     # --- 分批控制 ---
     "BATCH_SIZE": 120,  # 每批次处理的股票数量
     "BATCH_INTERVAL_SEC": 8,  # 批次间隔休息时间（秒）
@@ -185,22 +190,25 @@ def filter_stock_list(df):
         mask |= df["name"].str.contains("ST|退", na=False)
     return df[~mask]["code"].tolist()
 
-
 # ============================================================
-# 模块 3：技术指标（SQZMOM / Pivot）(代码不变)
+# 3：技术指标（SQZMOM / linreg / true_range / color / sqz_id）
 # ============================================================
 def tv_linreg(y, length):
-    if pd.isna(y).any() or len(y) < 2:
+    if pd.isna(y).any():
         return np.nan
-
     x = np.arange(length)
     y = y.values
+    # 避免 numpy.linalg.LinAlgError: Singular matrix in least squares
+    if len(y) < 2:
+        return np.nan
+
     A = np.vstack([x, np.ones(length)]).T
     try:
         m, b = np.linalg.lstsq(A, y, rcond=None)[0]
-        return m * (length - 1) + b
     except np.linalg.LinAlgError:
-        return np.nan
+        return np.nan  # 极少数情况出现奇异矩阵
+
+    return m * (length - 1) + b
 
 
 def true_range(df):
@@ -243,26 +251,33 @@ def add_squeeze_counter(df):
 
 def squeeze_momentum(df, length=None, mult=None, lengthKC=None, multKC=None, useTrueRange=True):
     # 允许通过参数覆盖 CONFIG
-    if length is None: length = CONFIG["SQZ"]["length"]
-    if lengthKC is None: lengthKC = CONFIG["SQZ"]["lengthKC"]
+    if length is None:
+        length = CONFIG["SQZ"]["length"]
+    if mult is None:
+        mult = CONFIG["SQZ"]["mult"]
+    if lengthKC is None:
+        lengthKC = CONFIG["SQZ"]["lengthKC"]
+    if multKC is None:
+        multKC = CONFIG["SQZ"]["multKC"]
 
     close = df['close']
     high = df['high']
     low = df['low']
 
-    # Bollinger Bands
+    # Bollinger Bands (注意 LazyBear 使用 multKC)
     basis = close.rolling(length).mean()
-    dev = CONFIG["SQZ"]["mult"] * close.rolling(length).std(ddof=0)
+    dev = multKC * close.rolling(length).std(ddof=0)
     upperBB = basis + dev
     lowerBB = basis - dev
+    # 为输出 BB 值 (用 % 距离 basis)
     bb_width = (upperBB - lowerBB) / basis.replace(0, np.nan)
 
     # Keltner Channel
     ma = close.rolling(lengthKC).mean()
     r = true_range(df) if useTrueRange else (high - low)
     rangema = r.rolling(lengthKC).mean()
-    upperKC = ma + rangema * CONFIG["SQZ"]["multKC"]
-    lowerKC = ma - rangema * CONFIG["SQZ"]["multKC"]
+    upperKC = ma + rangema * multKC
+    lowerKC = ma - rangema * multKC
 
     sqzOn = (lowerBB > lowerKC) & (upperBB < upperKC)
     sqzOff = (lowerBB < lowerKC) & (upperBB > upperKC)
@@ -276,32 +291,40 @@ def squeeze_momentum(df, length=None, mult=None, lengthKC=None, multKC=None, use
     mid = (avg_hl + sma_close) / 2
     source_mid = close - mid
 
-    # 计算 momentum
+    # 使用 apply 和 tv_linreg 来计算 momentum
     val = source_mid.rolling(lengthKC).apply(lambda x: tv_linreg(pd.Series(x), lengthKC), raw=False)
     df["val"] = val
     df["val_prev"] = val.shift(1)
     df["val_color"] = df.apply(lambda r: get_color_cn(r["val"], r["val_prev"]), axis=1)
 
-    df["BB_pct"] = bb_width
+    df["BB_pct"] = bb_width  # 用于输出 BB 值比例（可按需调整）
     df = add_squeeze_counter(df)
     return df
 
 
+# ============================================================
+# 模块 4：Pivot 高点（前阻力位）
+# ============================================================
 def calculate_pivot_high_vectorized(df, left=None, right=None):
-    if left is None: left = CONFIG["PIVOT_LEFT"]
-    if right is None: right = CONFIG["PIVOT_RIGHT"]
+    if left is None:
+        left = CONFIG["PIVOT_LEFT"]
+    if right is None:
+        right = CONFIG["PIVOT_RIGHT"]
 
     highs = df['high'].values
     n = len(highs)
     pivots = np.full(n, np.nan)
 
+    # 简单明了的遍历（相对安全）
     for i in range(left, n - right):
         left_max = np.max(highs[i - left:i])
         right_max = np.max(highs[i + 1:i + 1 + right])
+        # 严格高点：左侧和右侧的最高价都低于当前高点
         if highs[i] > left_max and highs[i] > right_max:
             pivots[i] = highs[i]
 
     return pd.Series(pivots, index=df.index).ffill()
+
 
 
 # ============================================================
@@ -468,7 +491,8 @@ def strategy_single_stock(code, start_date, end_date, df_spot):  # 接收 df_spo
 
         # 2. 添加实时数据（当日快照）
         # 【关键修改：使用全局快照数据，避免网络I/O】
-        df = append_today_realtime_snapshot(code, df, df_spot)
+        if CONFIG["USE_REAL_TIME_DATA"]:
+            df = append_today_realtime_snapshot(code, df, df_spot)
 
         # 3. 数据校验与短路优化
         current_close = float(df['close'].iloc[-1])
@@ -612,15 +636,20 @@ def main():
     print(f"\n[任务启动] 扫描范围: {start_date} ~ {end_date}")
     print(f"[配置] 目标线程: {CONFIG['MAX_WORKERS']} | 超时: {CONFIG['REQUEST_TIMEOUT']}s")
 
-    # 🔴 1. 串行获取一次实时快照 (使用腾讯接口)
-    try:
-        df_spot = fetch_realtime_snapshot()
-        if df_spot.empty:
-            print("[终止] 无法获取实时行情快照，终止扫描。")
+    # 1. 串行获取实时快照 (受开关控制)
+    df_spot = pd.DataFrame()
+
+    if CONFIG["USE_REAL_TIME_DATA"]:
+        try:
+            df_spot = fetch_realtime_snapshot()
+            if df_spot.empty:
+                print("[终止] 无法获取实时行情快照，终止扫描。")
+                return
+        except Exception as e:
+            print(f"[致命终止] 获取实时行情快照失败: {e}")
             return
-    except Exception as e:
-        print(f"[致命终止] 获取实时行情快照失败: {e}")
-        return
+    else:
+        print("[配置] 实时数据获取开关关闭 (USE_REAL_TIME_DATA=False)，跳过全市场快照获取。")
 
     # 2. 获取股票列表和过滤 (逻辑不变)
     manual_list = CONFIG["MANUAL_STOCK_LIST"]
