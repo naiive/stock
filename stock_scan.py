@@ -64,7 +64,7 @@ CONFIG = {
     # --- 过滤条件 ---
     "EXCLUDE_GEM": True,  # 排除创业板（300）
     "EXCLUDE_KCB": True,  # 排除科创板（688）
-    "EXCLUDE_BJ": True,   # 排除北交所（8、4）
+    "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
     "EXCLUDE_ST": False,  # 排除 ST/退
     "ADJUST": "qfq",  # 复权方式
 
@@ -190,7 +190,7 @@ def filter_stock_list(df):
     if CONFIG["EXCLUDE_KCB"]:
         mask |= df["code"].str.startswith("688")
     if CONFIG["EXCLUDE_BJ"]:
-        mask |= df["code"].str.startswith(("8", "4"))
+        mask |= df["code"].str.startswith(("8", "4", "92"))
     if CONFIG["EXCLUDE_ST"] and "name" in df.columns:
         mask |= df["name"].str.contains("ST|退", na=False)
     return df[~mask]["code"].tolist()
