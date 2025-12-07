@@ -351,35 +351,71 @@ def append_today_realtime(symbol: str, df_daily: pd.DataFrame, period: str = "1"
     :param period: 实时接口周期 默认 1 分钟
     :return:
     """
+    # 🔴 网络优化: 引入随机延时，减少被屏蔽的几率
+    time.sleep(random.uniform(0.1, 0.3))
 
-    df_min = ak.stock_zh_a_minute(
-        symbol=symbol,
-        period=period,
-        adjust=CONFIG["ADJUST"]
-    )
-    # 只有实时数据最后一条最新的
-    df_min.tail(1)
+    try:
+        # 1. 获取分钟数据
+        df_min = ak.stock_zh_a_minute(
+            symbol=symbol,
+            period=period,
+            adjust=CONFIG["ADJUST"]
+        )
 
-    df_min['date'] = pd.to_datetime(df_min['day']).dt.date
+        # 2. 健壮性检查
+        if df_min is None or len(df_min) == 0:
+            print(f"⚠️ 警告：未获取到 {symbol} 的分钟数据，跳过更新。")
+            return df_daily
 
-    for _, row in df_min.iterrows():
-        new_date = row['date']
-        if new_date not in pd.to_datetime(df_daily['date']).dt.date.values:
-            new_row = {
-                'date': new_date,
-                'open': row['open'],
-                'high': row['high'],
-                'low': row['low'],
-                'close': row['close'],
-                'volume': row['volume'],
-                'amount': None,  # 如果没有数据的话，可以设置为 None 或其他缺省值
-                'outstanding_share': None,
-                'turnover': None
-            }
+        # 3. 核心步骤：安全地提取最新（最后）的一行数据
+        # iloc[-1] 返回 Series
+        latest_row = df_min.iloc[-1]
 
-            df_daily = pd.concat([df_daily, pd.DataFrame([new_row])], ignore_index=True)
+        # 4. 提取和构造新行
+        # 分钟数据的时间字段是 'day'，且需要提取日期部分
+        latest_date = pd.to_datetime(latest_row['day']).date()
 
-    return df_daily
+        # 构造要追加的新行 (必须包含 df_daily 的所有关键列，尤其是主键 code, adjust)
+        new_row_data = {
+            'date': latest_date,
+            'open': latest_row['open'],
+            'high': latest_row['high'],
+            'low': latest_row['low'],
+            'close': latest_row['close'],
+            'volume': latest_row['volume'],
+            'amount': latest_row.get('amount'),
+            # 💡 补全 df_daily 中存在的其他列，确保结构兼容
+            'outstanding_share': None,
+            'turnover': None,
+            'adjust': CONFIG.get("ADJUST", ""),  # 确保复权类型存在
+            'code': symbol[2:],  # 确保股票代码存在
+        }
+
+        # 5. 转换为 DataFrame，并确保列顺序与 df_daily 一致
+        # 必须确保 df_new_day 拥有与 df_daily 完全相同的列
+        df_new_day = pd.DataFrame([new_row_data], columns=df_daily.columns)
+
+        # 6. 覆盖逻辑：删除旧的当日数据 (如果有的话)
+
+        # 统一 df_daily 的日期类型（假设 df_daily['date'] 可能是 datetime 对象）
+        df_daily['date_compare'] = pd.to_datetime(df_daily['date']).dt.date
+
+        # 过滤：保留所有日期不等于最新日期的历史数据
+        df_daily_filtered = df_daily[df_daily['date_compare'] != latest_date].drop(columns=['date_compare'])
+
+        # 7. 高效追加 (concat)
+        df_final = pd.concat([df_daily_filtered, df_new_day], ignore_index=True)
+
+        return df_final
+
+    except IndexError:
+        # 捕获因数据获取异常导致的索引错误
+        print(f"❌ 更新 {symbol} 失败: 无法从数据中安全提取最后一行。跳过。")
+        return df_daily
+    except Exception as e:
+        print(f"❌ 更新 {symbol} 失败: {e}")
+        return df_daily
+
 
 
 def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
@@ -397,7 +433,7 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
         # )
 
         # 本地mysql接口
-        return  stock_zh_a_daily_mysql(
+        return stock_zh_a_daily_mysql(
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
