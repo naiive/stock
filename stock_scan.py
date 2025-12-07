@@ -88,7 +88,7 @@ CONFIG = {
     "OUTPUT_FOLDER_BASE": "Day_Stocks",  # 结果文件存放的根文件夹
 
     # --- 抽样/并发 ---
-    "SAMPLE_SIZE": 10,  # 0 或 None 表示全量，>0 表示随机抽样数量
+    "SAMPLE_SIZE": 0,  # 0 或 None 表示全量，>0 表示随机抽样数量
     "MAX_WORKERS": 32,
     "REQUEST_TIMEOUT": 15,  # 🆕 **关键：akshare 单次请求整体超时保护（秒）**
 
@@ -333,7 +333,8 @@ def calculate_pivot_high_vectorized(df, left=None, right=None):
 
 
 # ============================================================
-# 模块 5：今日实时K补充 + 单股策略
+# 模块 5：今日实时K补充 + 单股策略，
+# 交易日期：历史+实时，非交易日期就是：历史
 # ============================================================
 def append_today_realtime(symbol: str, df_daily: pd.DataFrame, period: str = "1" ):
     """
@@ -355,6 +356,8 @@ def append_today_realtime(symbol: str, df_daily: pd.DataFrame, period: str = "1"
         period=period,
         adjust=CONFIG["ADJUST"]
     )
+    # 只有实时数据最后一条最新的
+    df_min.tail(1)
 
     df_min['date'] = pd.to_datetime(df_min['day']).dt.date
 
