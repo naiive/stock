@@ -215,16 +215,14 @@ def fetch_data_only(item: dict, start_date: str, end_date: str):
             return None
 
         # 2. 数据清洗与准备 (AkShare 返回 9 列，只保留核心 7 列)
-        # 字段顺序: 日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额, 振幅, 换手率
+        # 字段顺序: 日期, 开盘, 最高, 最低, 收盘, 成交量, 成交额, 振幅, 换手率
         # 确保 DataFrame 有足够的列数
         if df.shape[1] < 7:
             return None
 
         df = df.iloc[:, :7]
-        df.columns = ['date', 'open', 'close', 'high', 'low', 'volume', 'amount']
 
-        # 调整列顺序
-        df = df[['date', 'open', 'high', 'low', 'close', 'volume', 'amount']].copy()
+        df.columns = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount']
 
         # 添加联合主键需要的字段
         df['code'] = code
