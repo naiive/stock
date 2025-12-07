@@ -64,7 +64,7 @@ CONFIG = {
 
     # --- 过滤条件 ---
     "EXCLUDE_GEM": True,  # 排除创业板（300）
-    "EXCLUDE_KCB": True,  # 排除科创板（688）
+    "EXCLUDE_KCB": True,  # 排除科创板（688, 689）
     "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
     "EXCLUDE_ST": False,  # 排除 ST/退
     "ADJUST": "qfq",  # 复权方式
@@ -90,7 +90,7 @@ CONFIG = {
 
     # --- 抽样/并发 ---
     "SAMPLE_SIZE": 0,  # 0 或 None 表示全量，>0 表示随机抽样数量
-    "MAX_WORKERS": 20,
+    "MAX_WORKERS": 15,
     "REQUEST_TIMEOUT": 15,  # 🆕 **关键：akshare 单次请求整体超时保护（秒）**
 
     # --- 🆕 手动输入 ---
