@@ -40,9 +40,9 @@ CONFIG = {
     # --- 过滤条件 ---
     "EXCLUDE_GEM": True,  # 排除创业板（300）
     "EXCLUDE_KCB": True,  # 排除科创板（688、689）
-    "EXCLUDE_BJ": True,  # 排除北交所（8、4、92）
+    "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
     "EXCLUDE_ST": False,  # 排除 ST/退
-    "ADJUST": "qfq",  # 复权方式
+    "ADJUST": "qfq",      # 复权方式
 
     # --- SQZ策略参数 ---
     "SQZ": {
@@ -54,7 +54,7 @@ CONFIG = {
     },
 
     # --- PIVOT策略参数 ---
-    "PIVOT_LEFT": 15,  # 左侧 K 线数量
+    "PIVOT_LEFT": 15,   # 左侧 K 线数量
     "PIVOT_RIGHT": 15,  # 右侧 K 线数量
 
     # --- 文件路径/名称 ---
@@ -64,8 +64,8 @@ CONFIG = {
     "OUTPUT_FOLDER_BASE": "Day_Stocks",
 
     # --- 抽样/并发 (已优化) ---
-    "SAMPLE_SIZE": 300,  # 0 或 None 表示全量
-    "MAX_WORKERS": 10,  # 降低线程数到 10
+    "SAMPLE_SIZE": 300,     # 0 或 None 表示全量
+    "MAX_WORKERS": 10,      # 降低线程数到 10
     "REQUEST_TIMEOUT": 20,  # 增加超时时间到 20s
 
     # --- 🆕 数据源控制 ---
@@ -79,7 +79,7 @@ CONFIG = {
     "USE_REAL_TIME_DATA": False,
 
     # --- 分批控制 ---
-    "BATCH_SIZE": 120,  # 每批次处理的股票数量
+    "BATCH_SIZE": 120,        # 每批次处理的股票数量
     "BATCH_INTERVAL_SEC": 8,  # 批次间隔休息时间（秒）
 
     # --- 🆕 手动输入 ---
