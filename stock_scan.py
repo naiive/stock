@@ -88,7 +88,7 @@ CONFIG = {
     "OUTPUT_FOLDER_BASE": "Day_Stocks",  # 结果文件存放的根文件夹
 
     # --- 抽样/并发 ---
-    "SAMPLE_SIZE": 200,  # 0 或 None 表示全量，>0 表示随机抽样数量
+    "SAMPLE_SIZE": 10,  # 0 或 None 表示全量，>0 表示随机抽样数量
     "MAX_WORKERS": 32,
     "REQUEST_TIMEOUT": 15,  # 🆕 **关键：akshare 单次请求整体超时保护（秒）**
 
@@ -108,18 +108,6 @@ CONFIG = {
                             # "002429"
                         ]
 }
-
-# 1️⃣ 程序启动时获取交易日列表
-df_cal = ak.tool_trade_date_hist_sina()
-df_cal['trade_date'] = pd.to_datetime(df_cal['trade_date'], format="%Y%m%d").dt.date
-trade_dates_set = set(df_cal['trade_date'])  # 转成 set 方便快速查找
-
-# 2️⃣ 判断今天是否交易日
-today = datetime.today().date()
-if today not in trade_dates_set:
-    print("今天非交易日，不查询实时K")
-else:
-    print("今天交易日，可以查询实时K")
 
 # ============================================================
 # 工具：重试装饰器
@@ -347,70 +335,47 @@ def calculate_pivot_high_vectorized(df, left=None, right=None):
 # ============================================================
 # 模块 5：今日实时K补充 + 单股策略
 # ============================================================
-def append_today_realtime(df_daily, symbol):
+def append_today_realtime(symbol: str, df_daily: pd.DataFrame, period: str = "1" ):
     """
-    将今日实时K补充到日线历史数据中，遵循以下规则：
-    1️⃣ 非交易日，不调用实时接口
-    2️⃣ 交易日，且时间 < 09:30，不调用实时接口
-    3️⃣ 交易日，且 09:30 <= 当前时间 <= 15:00，调用实时接口并添加数据
-    4️⃣ 交易日，且当前时间 > 15:00，如果历史接口已有当天数据，不重复添加
+    day  open  high   low  close volume
+    2025-12-05 15:00:00  7.43  7.43  7.43   7.43  22200
+
+    date  open  high   low  close     volume      amount  outstanding_share  turnover
+    2025-12-03  8.23  8.23  8.23   8.23  3681100.0  30295453.0        699623237.0  0.005262
+    2025-12-04  7.82  7.82  7.82   7.82   446900.0   3494758.0        699623237.0  0.000639
+
+    :param symbol: 股票代码
+    :param df_daily: 历史数据df
+    :param period: 实时接口周期 默认 1 分钟
+    :return:
     """
-    try:
-        df_cal['trade_date'] = pd.to_datetime(df_cal['trade_date'], format="%Y%m%d").dt.date
-        trade_dates_set = set(df_cal['trade_date'])
 
-        today = datetime.today().date()
-        now = datetime.now()
+    df_min = ak.stock_zh_a_minute(
+        symbol=symbol,
+        period=period,
+        adjust=CONFIG["ADJUST"]
+    )
 
-        # --- 2️⃣ 判断是否交易日 ---
-        if today not in trade_dates_set:
-            # 非交易日
-            return df_daily
+    df_min['date'] = pd.to_datetime(df_min['day']).dt.date
 
-        # --- 3️⃣ 检查是否已经有今日日线 ---
-        if today in df_daily.index.date:
-            # 已经有今日数据
-            if now.time() >= time(15, 0):
-                # 收盘后，历史接口已经有数据，不需要再添加
-                return df_daily
-            # 如果在 09:30-15:00，可更新实时数据
-        else:
-            # 今天没有历史日线数据
-            if now.time() < time(9, 30):
-                # 开盘前，不添加
-                return df_daily
+    for _, row in df_min.iterrows():
+        new_date = row['date']
+        if new_date not in pd.to_datetime(df_daily['date']).dt.date.values:
+            new_row = {
+                'date': new_date,
+                'open': row['open'],
+                'high': row['high'],
+                'low': row['low'],
+                'close': row['close'],
+                'volume': row['volume'],
+                'amount': None,  # 如果没有数据的话，可以设置为 None 或其他缺省值
+                'outstanding_share': None,
+                'turnover': None
+            }
 
-        # --- 4️⃣ 获取今日实时分钟K ---
-        df_min = ak.stock_zh_a_minute(symbol=symbol, period="1")
-        if df_min is None or df_min.empty:
-            return df_daily
-
-        df_min["time"] = pd.to_datetime(df_min["time"])
-        today_data = df_min[df_min["time"].dt.date == today]
-        if today_data.empty:
-            return df_daily
-
-        # --- 5️⃣ 汇总实时K生成今日日线 ---
-        open_price = today_data.iloc[0]["open"]
-        close_price = today_data.iloc[-1]["close"]
-        high_price = today_data["high"].max()
-        low_price = today_data["low"].min()
-        volume = today_data["volume"].sum()
-
-        # 添加或更新日线数据
-        df_daily.loc[pd.Timestamp(today)] = {
-            "open": open_price,
-            "close": close_price,
-            "high": high_price,
-            "low": low_price,
-            "volume": volume
-        }
-
-    except Exception as e:
-        print(f"[实时K补充失败] {symbol} | {e}")
+            df_daily = pd.concat([df_daily, pd.DataFrame([new_row])], ignore_index=True)
 
     return df_daily
-
 
 
 def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
@@ -468,8 +433,8 @@ def strategy_single_stock(code, start_date, end_date):
         if df is None or df.empty or len(df) < 220:
             return None
 
-        # 添加实时数据
-        df = append_today_realtime(df, symbol)
+        # 添加实时数据【看是否需要】
+        df = append_today_realtime(symbol, df)
 
         # --- 核心优化：先计算 MA200、前阻力位和涨幅，只要有一个不满足就直接排除 ---
         current_close = float(df['close'].iloc[-1])
