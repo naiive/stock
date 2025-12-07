@@ -89,7 +89,7 @@ CONFIG = {
     "OUTPUT_FOLDER_BASE": "Day_Stocks",  # 结果文件存放的根文件夹
 
     # --- 抽样/并发 ---
-    "SAMPLE_SIZE": 0,  # 0 或 None 表示全量，>0 表示随机抽样数量
+    "SAMPLE_SIZE": 100,  # 0 或 None 表示全量，>0 表示随机抽样数量
     "MAX_WORKERS": 20,
     "REQUEST_TIMEOUT": 15,  # 🆕 **关键：akshare 单次请求整体超时保护（秒）**
 
