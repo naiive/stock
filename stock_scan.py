@@ -53,6 +53,7 @@ import numpy as np
 import akshare as ak
 import asyncio
 from tqdm import tqdm
+from stock_query import stock_zh_a_daily_mysql
 
 # ============================================================
 # 模块 1：配置 (Configuration)
@@ -387,7 +388,16 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
     """
 
     def _fetch():
-        return ak.stock_zh_a_daily(
+        # ak包接口
+        # return ak.stock_zh_a_daily(
+        #     symbol=symbol,
+        #     start_date=start_date,
+        #     end_date=end_date,
+        #     adjust=adjust
+        # )
+
+        # 本地mysql接口
+        return  stock_zh_a_daily_mysql(
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
