@@ -49,7 +49,7 @@ CONFIG = {
     # --- 抽样/并发 ---
     "SAMPLE_SIZE": 0,  # 0 或 None 表示全量，>0 表示随机抽样数量
     "MAX_WORKERS": 8,  # 线程数
-    "REQUEST_TIMEOUT": 30,  # AkShare 单次请求整体超时保护（秒）
+    "REQUEST_TIMEOUT": 32,  # AkShare 单次请求整体超时保护（秒）
     "CACHE_FILE": "stock_list_cache.json",
 }
 
@@ -194,7 +194,7 @@ def fetch_data_only(item: dict, start_date: str, end_date: str):
     🎯 核心抓取函数：获取单只股票的日线数据并返回 DataFrame。
     """
     # 🔴 新增：引入随机延时，模拟人类操作，减轻服务器压力
-    time.sleep(random.uniform(0.8, 1))  # 随机等待 0.1 到 0.5 秒
+    time.sleep(random.uniform(1, 1.5))  # 随机等待 1 到 1.5 秒
 
     code = item['code']
     symbol = item['symbol']
