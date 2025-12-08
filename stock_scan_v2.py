@@ -600,15 +600,9 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
 
         if df is None or df.empty or len(df) < 220: return None
 
+        # 调用实时股票行情拼接接口
         if CONFIG["USE_REAL_TIME_DATA"]:
             df = append_today_realtime_snapshot(code, df, df_spot)
-
-        # =======================================================
-        # 🆕 新增打印代码
-        # =======================================================
-        if not df.empty:
-            # 打印股票代码和拼接后 DataFrame 的最后一行 (今日数据)
-            print(f"[数据检查] {code} 拼接后：\n{df.to_string(index=False)}")
 
         current_close = float(df['close'].iloc[-1])
         prev_close = float(df['close'].iloc[-2])
