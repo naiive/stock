@@ -48,7 +48,7 @@ CONFIG = {
     "DAYS": 365,  # 扫描回溯天数 (用于计算 MA200)
 
     # --- 🆕  过滤条件 ---
-    "EXCLUDE_GEM": True,  # 排除创业板（300）
+    "EXCLUDE_GEM": True,  # 排除创业板（300、301）
     "EXCLUDE_KCB": True,  # 排除科创板（688、689）
     "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
     "EXCLUDE_ST": False,  # 排除 ST/退
@@ -311,7 +311,7 @@ def filter_stock_list(df):
     df["code"] = df["code"].astype(str).str.zfill(6)
     mask = pd.Series(False, index=df.index)
     if CONFIG["EXCLUDE_GEM"]:
-        mask |= df["code"].str.startswith("300")
+        mask |= df["code"].str.startswith(("300", "301"))
     if CONFIG["EXCLUDE_KCB"]:
         mask |= df["code"].str.startswith(("688", "689"))
     if CONFIG["EXCLUDE_BJ"]:
