@@ -89,8 +89,8 @@ CONFIG = {
 
     # --- 🆕 是否全量/分批控制 ---
     "SAMPLE_SIZE": 0,         # 0 或 None 表示全量
-    "BATCH_SIZE": 300,        # SAMPLE_SIZE 全量才开启分批功能，每批次处理的股票数量
-    "BATCH_INTERVAL_SEC": 8,  # 批次间隔休息时间（秒）
+    "BATCH_SIZE": 500,        # SAMPLE_SIZE 全量才开启分批功能，每批次处理的股票数量
+    "BATCH_INTERVAL_SEC": 5,  # 批次间隔休息时间（秒）
 
     # --- 🆕 手动输入 ---
     # 示例: ["600519", "000001", "300751"]。如果非空，则跳过全量扫描。
