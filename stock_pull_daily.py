@@ -33,10 +33,11 @@ CONFIG = {
     "DB": {
         "host": "localhost",
         "port": 3306,
-        "user": "root",           # <- 请修改
-        "password": "Elaiza112233",  # <- 请修改
-        "database": "stock",      # <- 请修改
+        "user": "root",
+        "password": "Elaiza112233",
+        "database": "stock"
     },
+
     "MYSQL_TABLE": "a_stock_daily",
 
     # 抓取范围
