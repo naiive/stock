@@ -85,7 +85,7 @@ CONFIG = {
     # --- 🆕 实时数据开关 ---
     # True:  使用腾讯实时股票全量接口 (fetch_realtime_snapshot)
     # False: 不使用，跳过实时数据获取（用于离线回测或非交易日）
-    "USE_REAL_TIME_DATA": True,
+    "USE_REAL_TIME_DATA": False,
 
     # --- 🆕 是否全量/分批控制 ---
     "SAMPLE_SIZE": 0,         # 0 或 None 表示全量
