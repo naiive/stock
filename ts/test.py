@@ -47,10 +47,10 @@ if __name__ == "__main__":
     print("------------历史-----------")
     #
     # period: 分钟周期，支持 '1' '5' '15' '30' '60'
-    min = get_minute_data("sh600519", period="1")
-    print("------------实时-----------")
-    print(min)
-    print("------------实时-----------")
+    # min = get_minute_data("sh600519", period="1")
+    # print("------------实时-----------")
+    # print(min)
+    # print("------------实时-----------")
 
     # df3 = fetch_realtime_snapshot()
     # print("------------实时全量-----------")
