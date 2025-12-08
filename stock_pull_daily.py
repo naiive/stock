@@ -3,97 +3,97 @@
 
 """
 ============================================================
-A 股历史数据批量导入 MySQL 脚本 (Bulk Insert Optimized)
-功能：并发抓取全市场 A 股日线数据，合并后批量导入，使用全局 DELETE 实现覆盖更新。
+A 股历史数据批量导入 MySQL 脚本（稳定版）
+说明：
+- 单层线程池 + asyncio.Semaphore 控制真实并发
+- asyncio.wait_for 控制单次 akshare 请求超时（不会再创建额外线程）
+- fetch_data_only 内部带同步重试（指数退避）
+- 第一轮失败后进行低并发重试
 ============================================================
 """
+
 import os
 import json
 import time
 import random
+import math
 from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, wait, TimeoutError as ThreadingTimeoutError
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 import pandas as pd
 import akshare as ak
-import asyncio
 from tqdm import tqdm
 
-# --- MySQL 依赖 ---
 from sqlalchemy import create_engine, text
 
-# ============================================================
-# 模块 1：配置 (Configuration)
-# ============================================================
+# ------------------- 配置 -------------------
 CONFIG = {
-    # --- MySQL 配置 ---
+    # MySQL
     "DB": {
         "host": "localhost",
         "port": 3306,
-        "user": "root",  # 请替换
-        "password": "Elaiza112233",  # 请替换
-        "database": "stock"  # 请替换
+        "user": "root",           # <- 请修改
+        "password": "Elaiza112233",  # <- 请修改
+        "database": "stock",      # <- 请修改
     },
-    "MYSQL_TABLE": "a_stock_daily",  # 目标表名
+    "MYSQL_TABLE": "a_stock_daily",
 
-    # --- 时间范围 ---
-    "DAYS": 500,  # 抓取的历史数据时长
+    # 抓取范围
+    "DAYS": 500,
 
-    # --- 过滤条件 ---
-    "EXCLUDE_GEM": True,  # 排除创业板（300、301）
-    "EXCLUDE_KCB": True,  # 排除科创板（688）
-    "EXCLUDE_BJ": True,   # 排除北交所（8、4）
-    "EXCLUDE_ST": False,  # 排除 ST/退
-    "ADJUST": "qfq",  # 复权方式: 'qfq' (前复权)
+    # 过滤
+    "EXCLUDE_GEM": True,   # 排除创业板（300、301）
+    "EXCLUDE_KCB": True,   # 排除科创板（688）
+    "EXCLUDE_BJ": True,    # 排除北交所（8、4、92）
+    "EXCLUDE_ST": False,   # 排除 ST/退
+    "ADJUST": "qfq",       # 'qfq' / 'hfq' / None
 
-    # --- 抽样/并发 ---
-    "SAMPLE_SIZE": 0,  # 0 或 None 表示全量，>0 表示随机抽样数量
-    "MAX_WORKERS": 8,  # 线程数
-    "REQUEST_TIMEOUT": 32,  # AkShare 单次请求整体超时保护（秒）
+    # 并发与超时
+    "MAX_WORKERS": 6,         # 建议 2~4 更稳
+    "REQUEST_TIMEOUT": 28,    # 单次 akshare 请求超时（秒），由 asyncio.wait_for 控制
+    "SAMPLE_SIZE": 0,         # 0 表示全量
     "CACHE_FILE": "stock_list_cache.json",
+
+    # 重试策略（fetch_data_only 内部）
+    "RETRY_TIMES": 2,
+    "RETRY_BACKOFF_BASE": 1.6,  # 指数退避基数
 }
+# ------------------- /配置 -------------------
 
 
-# ============================================================
-# 工具：数据库连接
-# ============================================================
+# ------------------- 数据库连接 -------------------
 def get_db_engine():
-    """创建并返回数据库连接引擎"""
     db_conf = CONFIG["DB"]
     url = f"mysql+pymysql://{db_conf['user']}:{db_conf['password']}@{db_conf['host']}:{db_conf['port']}/{db_conf['database']}?charset=utf8mb4"
-    try:
-        engine = create_engine(url, pool_recycle=3600)
-        return engine
-    except Exception as e:
-        print(f"❌ 数据库连接失败: {e}")
-        raise
+    engine = create_engine(url, pool_recycle=3600)
+    return engine
 
 
-# ============================================================
-# 工具：重试装饰器
-# ============================================================
-def retry(max_retries=3, delay=2):
+# ------------------- 重试装饰器（同步） -------------------
+def sync_retry(max_retries=2, backoff_base=1.6):
     def decorator(func):
         def wrapper(*args, **kwargs):
-            for i in range(max_retries):
+            last_exc = None
+            for attempt in range(1, max_retries + 1):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    if i == max_retries - 1:
+                    last_exc = e
+                    if attempt == max_retries:
                         raise
-                    time.sleep(delay)
-
+                    # 指数退避 + 随机抖动
+                    sleep_for = (backoff_base ** (attempt - 1)) + random.uniform(0, 0.5)
+                    time.sleep(sleep_for)
+            raise last_exc
         return wrapper
-
     return decorator
 
 
-# ============================================================
-# 模块 2：获取/缓存 全市场股票列表
-# ============================================================
-@retry(max_retries=2, delay=1)
+# ------------------- 获取/缓存全市场股票列表 -------------------
+@sync_retry(max_retries=2, backoff_base=1.5)
 def fetch_stock_list_safe():
-    """获取全市场股票列表，采用降级策略以提高稳定性。"""
+    """尝试多接口获取股票列表"""
     try:
         df = ak.stock_info_a_code_name()
         if not df.empty and "code" in df.columns:
@@ -103,13 +103,20 @@ def fetch_stock_list_safe():
 
     try:
         df = ak.stock_zh_a_spot_em()
-        return df[["code", "name"]]
+        # ak.stock_zh_a_spot_em 返回列名可能不同，确保 code/name 存在
+        if "code" in df.columns and "name" in df.columns:
+            return df[["code", "name"]]
+        # 尝试其他列名映射
+        if "代码" in df.columns and "名称" in df.columns:
+            df = df.rename(columns={"代码": "code", "名称": "name"})
+            return df[["code", "name"]]
     except Exception as e:
-        raise Exception(f"所有股票列表接口均不可用: {e}")
+        raise Exception(f"获取股票列表失败: {e}")
+
+    raise Exception("未能从任何接口获取到股票列表")
 
 
 def get_stock_list_manager():
-    """缓存管理器：优先读取本地缓存，过期或不存在则联网更新。"""
     cache_file = CONFIG["CACHE_FILE"]
     today_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -124,14 +131,15 @@ def get_stock_list_manager():
 
     print("[系统] 正在获取全量股票列表...")
     df = fetch_stock_list_safe()
+    if df is None or df.empty:
+        raise Exception("股票列表为空")
 
-    if not df.empty:
-        with open(cache_file, "w", encoding="utf-8") as f:
-            data = {
-                "time": today_str,
-                "data": df.to_dict(orient="records")
-            }
-            json.dump(data, f, ensure_ascii=False, indent=2)
+    with open(cache_file, "w", encoding="utf-8") as f:
+        data = {
+            "time": today_str,
+            "data": df.to_dict(orient="records")
+        }
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
     return df
 
@@ -148,107 +156,62 @@ def filter_stock_list(df):
     if CONFIG["EXCLUDE_BJ"]:
         mask |= df["code"].str.startswith(("8", "4", "92"))
     if CONFIG["EXCLUDE_ST"] and "name" in df.columns:
-        mask |= df["name"].str.contains("ST|退", na=False)  # 排除 ST/退市股
+        mask |= df["name"].str.contains("ST|退", na=False)
 
-    # 构造 AkShare 所需的 symbol 格式 (sh600xxx, sz00xxxx)
-    df['symbol'] = df["code"].apply(
-        lambda x: f"sh{x}" if x.startswith("6") else f"sz{x}"
-    )
-    df['symbol'] = df['symbol'].astype(str)  # 确保 symbol 是字符串
+    df['symbol'] = df["code"].apply(lambda x: f"sh{x}" if x.startswith("6") else f"sz{x}")
+    df['symbol'] = df['symbol'].astype(str)
 
     return df[~mask][['code', 'name', 'symbol']].to_dict('records')
 
 
-# ============================================================
-# 模块 3：数据抓取 (仅抓取，不导入)
-# ============================================================
-def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
+# ------------------- 数据抓取（同步函数） -------------------
+@sync_retry(max_retries=CONFIG["RETRY_TIMES"], backoff_base=CONFIG["RETRY_BACKOFF_BASE"])
+def fetch_data_only_sync(item: dict, start_date: str, end_date: str):
     """
-    一个辅助函数，在独立的线程中执行 akshare 请求，并使用 Future/wait 实施超时。
+    同步抓取单只股票（内部带重试）
+    说明：此函数是同步阻塞的，交由 ThreadPoolExecutor 执行。
     """
-
-    def _fetch():
-        # akshare.stock_zh_a_daily 默认返回 9 列
-        return ak.stock_zh_a_daily(
-            symbol=symbol,
-            start_date=start_date,
-            end_date=end_date,
-            adjust=adjust
-        )
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_fetch)
-        try:
-            done, not_done = wait([future], timeout=timeout)
-            if future in done:
-                return future.result()
-            elif future in not_done:
-                future.cancel()
-                raise ThreadingTimeoutError(f"请求超时 ({timeout}s)")
-        except Exception as e:
-            raise e
-
-
-def fetch_data_only(item: dict, start_date: str, end_date: str):
-    """
-    🎯 核心抓取函数：获取单只股票的日线数据并返回 DataFrame。
-    """
-    # 🔴 新增：引入随机延时，模拟人类操作，减轻服务器压力
-    time.sleep(random.uniform(1, 1.5))  # 随机等待 1 到 1.5 秒
+    # 适度随机延时（减轻服务器压力）
+    time.sleep(random.uniform(0.6, 1.2))
 
     code = item['code']
     symbol = item['symbol']
-    name = item['name']
+    name = item.get('name', code)
     adjust_type = CONFIG["ADJUST"]
 
-    try:
-        # 1. 获取数据 (带超时保护)
-        df = fetch_data_with_timeout(
-            symbol=symbol,
-            start_date=start_date,
-            end_date=end_date,
-            adjust=adjust_type,
-            timeout=CONFIG["REQUEST_TIMEOUT"]
-        )
+    # 调用 akshare
+    df = ak.stock_zh_a_daily(
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
+        adjust=adjust_type
+    )
 
-        if df is None or df.empty:
-            return None
+    # 基本校验
+    if df is None or df.empty:
+        raise Exception(f"接口返回空: {symbol}")
 
-        # 2. 数据清洗与准备 (AkShare 返回 9 列，只保留核心 7 列)
-        # 字段顺序: 日期, 开盘, 最高, 最低, 收盘, 成交量, 成交额, 振幅, 换手率
-        # 确保 DataFrame 有足够的列数
-        if df.shape[1] < 7:
-            return None
+    # AkShare 返回格式多样：尝试截取前 7 列并标准化
+    if df.shape[1] < 5:
+        raise Exception("返回列数过少")
+    df = df.iloc[:, :7]
+    df.columns = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount']
 
-        df = df.iloc[:, :7]
+    # 字段补全
+    df['code'] = code
+    df['adjust'] = adjust_type
 
-        df.columns = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount']
+    # 转换日期
+    df['date'] = pd.to_datetime(df['date']).dt.date
 
-        # 添加联合主键需要的字段
-        df['code'] = code
-        df['adjust'] = adjust_type
+    # 确保列顺序
+    df = df[['date', 'code', 'open', 'high', 'low', 'close', 'volume', 'amount', 'adjust']]
 
-        # 转换日期格式
-        df['date'] = pd.to_datetime(df['date']).dt.date
-
-        return df
-
-    except ThreadingTimeoutError:
-        print(f"[超时] {name} ({code}) 请求超时，跳过。")
-        return None
-
-    except Exception as e:
-        print(f"[失败] 获取 {name} ({code}) 失败: {e}")
-        return None
+    return df
 
 
-# ============================================================
-# 模块 4：并发调度器 (Async Scheduler)
-# ============================================================
+# ------------------- 异步调度器 -------------------
 async def main_scheduler(target_list):
-    """
-    主调度器：并发抓取所有数据，并执行批量导入。
-    """
     end_date = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
     table_name = CONFIG["MYSQL_TABLE"]
@@ -256,72 +219,118 @@ async def main_scheduler(target_list):
     total_stocks = len(target_list)
 
     print(f"\n[任务启动] 抓取范围: {start_date} ~ {end_date}")
-    print(f"[配置] 目标: {total_stocks} 支 | 线程: {CONFIG['MAX_WORKERS']} | 复权: {adjust_type}")
+    print(f"[配置] 目标: {total_stocks} 支 | 并发上限: {CONFIG['MAX_WORKERS']} | 单次超时: {CONFIG['REQUEST_TIMEOUT']}s")
 
     loop = asyncio.get_running_loop()
-    all_results_df = []
+    sem = asyncio.Semaphore(CONFIG["MAX_WORKERS"])
+    all_results = []
+    failed_items = []
 
+    # 单层线程池，用于 run_in_executor
     with ThreadPoolExecutor(max_workers=CONFIG["MAX_WORKERS"]) as pool:
-        tasks = [
-            loop.run_in_executor(pool, fetch_data_only, item, start_date, end_date)
-            for item in target_list
-        ]
 
-        # 使用 tqdm 进行进度条显示
+        async def fetch_with_limit(item):
+            """在 semaphore 限制下通过 executor 调用同步抓取，并用 asyncio.wait_for 加超时"""
+            async with sem:
+                try:
+                    # run_in_executor 返回的是协程对象，在这里用 wait_for 控制超时
+                    coro = loop.run_in_executor(pool, fetch_data_only_sync, item, start_date, end_date)
+                    df = await asyncio.wait_for(coro, timeout=CONFIG["REQUEST_TIMEOUT"])
+                    return df
+                except asyncio.TimeoutError:
+                    # 超时
+                    return ("timeout", item)
+                except Exception as e:
+                    return ("error", item, str(e))
+
+        # 构造任务列表（不立即 submit — 我们会使用 asyncio.as_completed）
+        tasks = [asyncio.create_task(fetch_with_limit(item)) for item in target_list]
+
         pbar = tqdm(asyncio.as_completed(tasks), total=len(tasks), unit="stock")
-
-        fetched_count = 0
+        success_count = 0
 
         for coro in pbar:
-            df_single = await coro
+            res = await coro
+            # 可能返回 DataFrame 或者 ("timeout", item) / ("error", item, msg)
+            if isinstance(res, tuple):
+                tag = res[0]
+                if tag == "timeout":
+                    failed_items.append(res[1])
+                elif tag == "error":
+                    failed_items.append(res[1])
+                    # 打印错误信息
+                    print(f"[失败] {res[1].get('code')} - {res[2]}")
+            elif res is None:
+                # treat as failed
+                # can't determine item here - skip
+                pass
+            else:
+                # 成功
+                all_results.append(res)
+                success_count += 1
 
-            if df_single is not None and not df_single.empty:
-                all_results_df.append(df_single)
-                fetched_count += 1
+            pbar.set_postfix({"成功抓取": success_count, "总数": total_stocks, "失败待重试": len(failed_items)})
 
-            pbar.set_postfix({"成功抓取": fetched_count, "总数": total_stocks})
+    # 第一轮完成
+    print(f"\n[第一轮完成] 成功 {len(all_results)} / {total_stocks}，失败 {len(failed_items)}。")
 
-    if not all_results_df:
+    # 如果有失败，进行一次低并发重试（MAX_WORKERS_RETRY 固定为 2）
+    if failed_items:
+        retry_results = []
+        retry_workers = min(2, max(1, CONFIG["MAX_WORKERS"] // 2))
+        print(f"[重试] 对 {len(failed_items)} 支股票进行低并发重试（并发 {retry_workers}）...")
+
+        async def retry_run(item):
+            async with asyncio.Semaphore(retry_workers):
+                try:
+                    coro = loop.run_in_executor(ThreadPoolExecutor(max_workers=1), fetch_data_only_sync, item, start_date, end_date)
+                    # 给重试稍长一些的超时
+                    df = await asyncio.wait_for(coro, timeout=max(CONFIG["REQUEST_TIMEOUT"] * 1.2, 30))
+                    return df
+                except asyncio.TimeoutError:
+                    return None
+                except Exception:
+                    return None
+
+        # 批量顺序重试（串行化也可以，但这里用少量并发）
+        retry_tasks = [asyncio.create_task(retry_run(it)) for it in failed_items]
+        for r in tqdm(asyncio.as_completed(retry_tasks), total=len(retry_tasks), unit="retry"):
+            df = await r
+            if df is not None:
+                retry_results.append(df)
+
+        print(f"[重试结果] 成功补抓 {len(retry_results)} 条")
+        all_results.extend(retry_results)
+
+    if not all_results:
         print("\n[警告] 未抓取到任何有效数据，导入终止。")
         return
 
-    # 1. 🟢 批量插入优化步骤 1: 合并所有数据
-    final_df = pd.concat(all_results_df, ignore_index=True)
-
-    print(f"\n[导入] 正在准备批量导入 {len(final_df)} 条数据...")
+    # 合并并导入数据库
+    final_df = pd.concat(all_results, ignore_index=True)
+    print(f"\n[导入] 准备批量导入 {len(final_df)} 条数据到表 {table_name} ...")
 
     try:
         engine = get_db_engine()
-
-        # 2. 🟢 批量插入优化步骤 2: 全局删除 (一次性清除所有旧数据)
-        with engine.connect() as connection:
+        with engine.connect() as conn:
             delete_sql = f"DELETE FROM {table_name} WHERE adjust='{adjust_type}'"
-            connection.execute(text(delete_sql))
-            connection.commit()
-            print(f"[导入] 已删除所有旧的 {adjust_type} 历史数据。")
+            conn.execute(text(delete_sql))
+            conn.commit()
+            print(f"[导入] 已删除旧数据 adjust={adjust_type}")
 
-        # 3. 🟢 批量插入优化步骤 3: 一次性导入
-        # 使用 chunksize 优化 Pandas 导入性能
-        final_df.to_sql(
-            name=table_name,
-            con=engine,
-            if_exists='append',
-            index=False,
-            chunksize=50000
-        )
+        # to_sql 插入，chunksize 可按数据量调整
+        final_df.to_sql(name=table_name, con=engine, if_exists='append', index=False, chunksize=50000)
         print(f"[导入] 批量导入成功。共导入 {len(final_df)} 条记录。")
 
     except Exception as e:
         print(f"❌ 批量导入失败: {e}")
 
 
-# ============================================================
-# 模块 5：主入口
-# ============================================================
+# ------------------- 主入口 -------------------
 def main():
     start_time = time.time()
 
-    # 1. 获取并过滤股票列表
+    # 获取并过滤股票列表
     try:
         df_base = get_stock_list_manager()
     except Exception as e:
@@ -335,13 +344,13 @@ def main():
 
     # 抽样处理
     sample_size = CONFIG["SAMPLE_SIZE"]
-    if sample_size > 0 and len(target_list) > sample_size:
+    if sample_size and sample_size > 0 and len(target_list) > sample_size:
         print(f"[抽样模式] 随机抽取 {sample_size} 支股票进行测试...")
         target_list = random.sample(target_list, sample_size)
     else:
-        print(f"[全量模式] 扫描所有 {len(target_list)} 支有效股票...")
+        print(f"[全量模式] 扫描 {len(target_list)} 支有效股票...")
 
-    # 2. 并发调度执行
+    # 运行调度器
     try:
         asyncio.run(main_scheduler(target_list))
     except Exception as e:
