@@ -4,15 +4,17 @@
 """
 ============================================================
 A 股突破扫描系统（Pivot + SQZMOM + MA200）
-版本：v1.4 (专业日志管理版)
+版本：v1.5 (交易日判断 + 实时数据追加修正版)
 
 【核心修改】
 1. 废弃高失败率的分钟数据接口。
 2. 实时数据获取改为串行调用腾讯实时快照接口 (stock_zh_a_spot)，并增加重试和延迟。
 3. 实时快照数据 (df_spot) 作为参数传递给并发执行器，实现 O(1) 查找最新价。
 4. 修复 append_today_realtime_snapshot 函数中的列名兼容性问题。
-5. 增强 LogRedirector 类：实现日志文件按大小 (20MB) 自动轮换。
-6. 日志存储路径：Day_Stocks/logs/YYYYMMDD/YYYYMMDD_HHMMSS.log
+5. 引入交易日历加载和判断机制，确保只在交易日追加实时数据。
+6. 修正 append_today_realtime_snapshot 逻辑：
+    - 严格根据日期判断是否追加（非交易日/历史数据已包含今日数据则不追加）。
+    - 使用实时快照提供的 O/H/L/C/Volume 构造当日 K 线。
 ============================================================
 """
 import os
@@ -21,7 +23,8 @@ import json
 import time
 import random
 import math
-from datetime import datetime, timedelta
+import re
+import datetime
 from concurrent.futures import ThreadPoolExecutor, wait, TimeoutError as ThreadingTimeoutError
 
 import pandas as pd
@@ -49,7 +52,7 @@ CONFIG = {
     "EXCLUDE_KCB": True,  # 排除科创板（688、689）
     "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
     "EXCLUDE_ST": False,  # 排除 ST/退
-    "ADJUST": "qfq",      # 复权方式
+    "ADJUST": "qfq",  # 复权方式
 
     # --- 🆕 SQZ策略参数 ---
     "SQZ": {
@@ -61,17 +64,17 @@ CONFIG = {
     },
 
     # --- 🆕 PIVOT策略参数 ---
-    "PIVOT_LEFT": 15,   # 左侧 K 线数量
+    "PIVOT_LEFT": 15,  # 左侧 K 线数量
     "PIVOT_RIGHT": 15,  # 右侧 K 线数量
 
     # --- 🆕 文件路径/名称 ---
     "CACHE_FILE": "stock_list_cache.json",
-    "EXPORT_ENCODING": "utf-8-sig",       # CSV文件导出编码
-    "OUTPUT_FILENAME_BASE": "Buy_Stocks", # 输出文件前缀
-    "OUTPUT_FOLDER_BASE": "Day_Stocks",   # LogRedirector 也使用此文件夹
+    "EXPORT_ENCODING": "utf-8-sig",  # CSV文件导出编码
+    "OUTPUT_FILENAME_BASE": "Buy_Stocks",  # 输出文件前缀
+    "OUTPUT_FOLDER_BASE": "Day_Stocks",  # LogRedirector 也使用此文件夹
 
     # --- 🆕 并发 ---
-    "MAX_WORKERS": 10,      # 降低线程数到 10
+    "MAX_WORKERS": 10,  # 降低线程数到 10
     "REQUEST_TIMEOUT": 20,  # 增加超时时间到 20s
 
     # --- 🆕 数据源控制 ---
@@ -82,29 +85,18 @@ CONFIG = {
     # --- 🆕 实时数据开关 ---
     # True:  使用腾讯实时股票全量接口 (fetch_realtime_snapshot)
     # False: 不使用，跳过实时数据获取（用于离线回测或非交易日）
-    "USE_REAL_TIME_DATA": False,
+    "USE_REAL_TIME_DATA": True,
 
     # --- 🆕 是否全量/分批控制 ---
-    "SAMPLE_SIZE": 0,          # 0 或 None 表示全量
-    "BATCH_SIZE": 200,         # SAMPLE_SIZE 全量才开启分批功能，每批次处理的股票数量
-    "BATCH_INTERVAL_SEC": 8,   # 批次间隔休息时间（秒）
+    "SAMPLE_SIZE": 10,  # 0 或 None 表示全量
+    "BATCH_SIZE": 200,  # SAMPLE_SIZE 全量才开启分批功能，每批次处理的股票数量
+    "BATCH_INTERVAL_SEC": 8,  # 批次间隔休息时间（秒）
 
     # --- 🆕 手动输入 ---
     # 示例: ["600519", "000001", "300751"]。如果非空，则跳过全量扫描。
-    "MANUAL_STOCK_LIST": [
-        # "000807",
-        # "000708",
-        # "002830",
-        # "301517",
-        # "000408",
-        # "600879",
-        # "600595",
-        # "601168",
-        # "002595",
-        # "301028",
-        # "002429"
-    ]
+    "MANUAL_STOCK_LIST": []
 }
+
 
 # ============================================================
 # 模块 0：日志重定向类
@@ -118,7 +110,7 @@ class LogRedirector:
 
     def __init__(self, folder="Day_Stocks"):
         # 日志路径: Day_Stocks/logs/YYYYMMDD/
-        self.today_str = datetime.now().strftime('%Y%m%d')
+        self.today_str = datetime.datetime.now().strftime('%Y%m%d')
         self.log_dir = os.path.join(folder, "logs", self.today_str)
         os.makedirs(self.log_dir, exist_ok=True)
 
@@ -129,7 +121,7 @@ class LogRedirector:
 
     def _get_new_log_path(self):
         """生成新的日志文件名：YYYYMMDD_HHMMSS.log"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         log_filename = f"{timestamp}.log"
         return os.path.join(self.log_dir, log_filename)
 
@@ -142,7 +134,6 @@ class LogRedirector:
             return True
 
         # 检查大小
-        # 注意：此处使用 os.path.getsize 检查文件大小，这是轮换的关键
         if os.path.getsize(self.current_log_path) > self.MAX_BYTES:
             self.log_file.write(f"\n[轮换] 日志达到 {self.MAX_BYTES / 1024 / 1024:.0f}MB 限制，正在切换文件...\n")
             self.log_file.close()  # <--- 关闭旧文件，保留在磁盘上
@@ -160,7 +151,7 @@ class LogRedirector:
             sys.stdout = self
             self.is_active = True
             self.write(
-                f"\n{'=' * 70}\n[会话开始] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n[日志文件] {self.current_log_path}\n{'=' * 70}\n")
+                f"\n{'=' * 70}\n[会话开始] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n[日志文件] {self.current_log_path}\n{'=' * 70}\n")
             return self
         except Exception as e:
             print(f"[错误] 日志系统启动失败: {e}", file=self.terminal)
@@ -169,7 +160,7 @@ class LogRedirector:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.is_active:
-            self.write(f"\n{'=' * 70}\n[会话结束] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'=' * 70}\n")
+            self.write(f"\n{'=' * 70}\n[会话结束] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{'=' * 70}\n")
             sys.stdout = self.terminal
             if self.log_file:
                 self.log_file.close()
@@ -182,7 +173,7 @@ class LogRedirector:
         if self.log_file:
             self._check_and_rotate()  # 写入前检查是否需要轮换
             if not message.startswith('\r'):
-                self.log_file.write(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+                self.log_file.write(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {message}")
             else:
                 self.log_file.write(message)
             self.log_file.flush()
@@ -192,6 +183,58 @@ class LogRedirector:
         if self.log_file:
             self.log_file.flush()
 
+
+# --- 交易日历相关的全局变量和函数 ---
+_TRADE_CALENDAR = set()
+
+def is_trade_day(date_obj):
+    """检查给定的日期是否在已加载的交易日历中"""
+    # 如果日历加载失败，_TRADE_CALENDAR 为空，则认为不是交易日，以防止错误追加
+    return date_obj in _TRADE_CALENDAR
+
+def load_trade_calendar():
+    """
+    加载最近几年的交易日历到全局集合中。
+    修正了 akshare 接口返回 datetime.date 对象导致的类型错误。
+    """
+    global _TRADE_CALENDAR
+    _TRADE_CALENDAR.clear()  # 清空旧的日历集合
+
+    try:
+        print("[系统] 正在加载交易日历...")
+
+        # 1. 调用 AkShare 接口
+        calendar_df = ak.tool_trade_date_hist_sina()
+
+        if calendar_df.empty or 'trade_date' not in calendar_df.columns:
+            raise ValueError("交易日历数据结构不正确或为空。")
+
+        trade_dates = calendar_df['trade_date'].tolist()
+
+        # 2. 防御性处理日期类型
+        for d in trade_dates:
+            if isinstance(d, str):
+                # 如果是字符串 (例如 '20230101')，进行解析
+                date_obj = datetime.datetime.strptime(d, '%Y%m%d').date()
+            # 明确引用 datetime 模块中的 datetime.datetime 类，解决 isinstance 报错
+            elif isinstance(d, datetime.datetime):
+                # 如果是 datetime.datetime 对象
+                date_obj = d.date()
+            # 明确引用 datetime 模块中的 datetime.date 类
+            elif isinstance(d, datetime.date):
+                # 这是 AkShare 接口实际返回的类型，直接使用
+                date_obj = d
+            else:
+                # 遇到其他类型，跳过
+                continue
+
+            _TRADE_CALENDAR.add(date_obj)
+
+        print(f"[系统] 交易日历加载完成，共 {len(_TRADE_CALENDAR)} 个交易日。")
+
+    except Exception as e:
+        # 如果加载失败，设置为空集，is_trade_day 将返回 False，从而禁用实时追加
+        print(f"[警告] 无法加载交易日历，实时数据追加功能将失效（将始终跳过）: {e}")
 
 # ============================================================
 # 工具：重试装饰器 (Retry Decorator)
@@ -238,7 +281,7 @@ def fetch_stock_list_safe():
 
 def get_stock_list_manager():
     cache_file = CONFIG["CACHE_FILE"]
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.datetime.now().strftime("%Y-%m-%d")
 
     if os.path.exists(cache_file):
         try:
@@ -391,49 +434,133 @@ def calculate_pivot_high_vectorized(df, left=None, right=None):
 # ============================================================
 # 模块 4：今日实时K补充
 # ============================================================
-
 @retry(max_retries=10, delay=15)
 def fetch_realtime_snapshot():
-    print("[系统] 正在尝试获取全市场实时行情快照 (腾讯接口)...")
+    """
+    获取全市场实时行情快照 (akshare)，并标准化列名和代码格式。
+    使用正则表达式剥离所有非数字前缀。
+    """
+    print("[系统] 正在尝试获取全市场实时行情快照...")
     try:
         df = ak.stock_zh_a_spot()
-    except Exception:
-        raise
-    df = df.rename(columns={'代码': 'code', '最新价': 'close', '成交量': 'volume'})
-    df = df[['code', 'close', 'volume']]
-    df['code'] = df['code'].astype(str).str.zfill(6)
+    except Exception as e:
+        print(f"[错误] 获取实时快照失败: {e}")
+        return pd.DataFrame()
+
+    # --- 关键修正 1：统一列名映射 ---
+    df = df.rename(columns={
+        '代码': 'code',
+        '最新价': 'close',
+        '成交量': 'volume',
+        '今开': 'open',
+        '最高': 'high',
+        '最低': 'low',
+        '成交额': 'amount',
+        '金额': 'amount',
+    })
+
+    # 强制转换为纯数字 code
+    if 'code' in df.columns:
+        # ----------------------------------------------------
+        # 🆕 最终修正：使用正则表达式去除所有非数字字符
+        # ----------------------------------------------------
+        # 1. 转换为字符串，并替换所有非数字字符为空白 ('\D' 代表非数字)
+        df['code'] = df['code'].astype(str).str.replace(r'\D', '', regex=True)
+
+        # 2. 确保代码是 6 位字符串
+        df['code'] = df['code'].str.zfill(6)
+    else:
+        print("[警告] 实时快照数据中缺少 '代码'/'code' 列。")
+        return pd.DataFrame()
+
+    # --- 后续列筛选、填充和类型转换不变 ---
+    required_cols = ['code', 'open', 'high', 'low', 'close', 'volume', 'amount']
+
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = np.nan
+
+    df = df[required_cols]
+
+    numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'amount']
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
     print(f"[系统] 成功获取 {len(df)} 条实时快照数据。")
     return df
 
-
 def append_today_realtime_snapshot(code: str, df_daily: pd.DataFrame, df_spot: pd.DataFrame) -> pd.DataFrame:
-    code_match = code
-    spot_row = df_spot[df_spot['code'] == code_match]
-    if spot_row.empty: return df_daily
+    """
+    将实时行情快照作为当日 K 线追加到历史日线数据中。
+    增加了详细的调试信息。
+    """
 
-    latest_data = spot_row.iloc[0]
-    latest_date = datetime.now().date()
-    close_price = latest_data['close']
-    latest_volume = latest_data['volume']
+    latest_date = datetime.datetime.now().date()
 
+    # ----------------------------------------------------
+    # 调试点 1：检查是否为交易日
+    # ----------------------------------------------------
+    if not is_trade_day(latest_date):
+        print(f"[{code}] 调试 1: {latest_date} 不是交易日，跳过拼接。")
+        return df_daily
+
+    # ----------------------------------------------------
+    # 调试点 2：检查实时快照中是否存在该股票 (最常见失败原因)
+    # ----------------------------------------------------
+    spot_row = df_spot[df_spot['code'] == code]
+    if spot_row.empty:
+        print(f"[{code}] 调试 2: 实时快照 df_spot 中未找到该股票数据。")
+        return df_daily
+
+    latest_data = spot_row.iloc[0]  # latest_data 是一个 Series
+
+    # ----------------------------------------------------
+    # 调试点 3：检查历史数据是否已包含今日数据
+    # ----------------------------------------------------
     if not df_daily.empty:
-        prev_day = df_daily.iloc[-1]
-        open_price = prev_day['open']
-        high_price = max(prev_day['high'], close_price)
-        low_price = min(prev_day['low'], close_price)
-    else:
-        open_price, high_price, low_price = close_price, close_price, close_price
+        df_daily_dates = pd.to_datetime(df_daily['date']).dt.date
+        last_history_date = df_daily_dates.iloc[-1]
+
+        if last_history_date == latest_date:
+            print(f"[{code}] 调试 3: 历史数据中已包含 {latest_date} 的数据，跳过实时拼接。")
+            return df_daily
+
+        # 额外检查：确保历史数据日期是升序且连续的，否则可能导致错误判断
+        if last_history_date > latest_date:
+            print(f"[{code}] 警告: 历史数据日期 {last_history_date} 晚于当前日期 {latest_date}，跳过拼接。")
+            return df_daily
+
+    # ----------------------------------------------------
+    # 4. 构造新的当日 K 线数据并追加
+    # ----------------------------------------------------
+
+    # 调试点 4：如果执行到这里，说明即将拼接
+    print(f"[{code}] 调试 4: 准备追加实时数据 {latest_date}，最新价: {latest_data.get('close')}。")
 
     new_row_data = {
-        'date': latest_date, 'open': open_price, 'high': high_price, 'low': low_price, 'close': close_price,
-        'volume': latest_volume,
-        'amount': None, 'outstanding_share': None, 'turnover': None, 'adjust': CONFIG.get("ADJUST", ""), 'code': code,
+        'date': latest_date,
+        # 直接使用标准化后的列名
+        'open': latest_data.get('open'),
+        'high': latest_data.get('high'),
+        'low': latest_data.get('low'),
+        'close': latest_data.get('close'),
+        'volume': latest_data.get('volume'),
+        'amount': latest_data.get('amount'),
+
+        # 填充历史数据中其他需要的列
+        'outstanding_share': None,
+        'turnover': None,
+        'adjust': CONFIG.get("ADJUST", ""),  # 假设 CONFIG 是可用的全局变量
+        'code': code,
     }
 
+    # 构造新的 DataFrame 行，并确保列名与历史数据一致
+    # ⚠️ 必须确保 df_daily.columns 包含 new_row_data 中所有的键
     df_new_day = pd.DataFrame([new_row_data], columns=df_daily.columns)
-    df_daily['date_compare'] = pd.to_datetime(df_daily['date']).dt.date
-    df_daily_filtered = df_daily[df_daily['date_compare'] != latest_date].drop(columns=['date_compare'])
-    df_final = pd.concat([df_daily_filtered, df_new_day], ignore_index=True)
+
+    # 直接追加到历史数据末尾
+    df_final = pd.concat([df_daily, df_new_day], ignore_index=True)
+
     return df_final
 
 
@@ -475,6 +602,13 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
 
         if CONFIG["USE_REAL_TIME_DATA"]:
             df = append_today_realtime_snapshot(code, df, df_spot)
+
+        # =======================================================
+        # 🆕 新增打印代码
+        # =======================================================
+        if not df.empty:
+            # 打印股票代码和拼接后 DataFrame 的最后一行 (今日数据)
+            print(f"[数据检查] {code} 拼接后：\n{df.to_string(index=False)}")
 
         current_close = float(df['close'].iloc[-1])
         prev_close = float(df['close'].iloc[-2])
@@ -541,8 +675,8 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
 # 模块 6：并发扫描 (Async Scheduler)
 # ============================================================
 async def main_scanner_async(stock_codes, df_spot):
-    end_date = datetime.now().strftime("%Y%m%d")
-    start_date = (datetime.now() - timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
+    end_date = datetime.datetime.now().strftime("%Y%m%d")
+    start_date = (datetime.datetime.now() - datetime.timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
 
     results = []
     loop = asyncio.get_running_loop()
@@ -598,11 +732,15 @@ async def batch_scan_manager_async(target_codes, df_spot):
 def main():
     start_time = time.time()
 
+    # --- 🆕 加载交易日历 (新增步骤) ---
+    if CONFIG["USE_REAL_TIME_DATA"]:
+        load_trade_calendar()
+
     # 使用 LogRedirector 启动日志管理
     with LogRedirector(folder=CONFIG['OUTPUT_FOLDER_BASE']) as log_redirector:
 
-        end_date = datetime.now().strftime("%Y%m%d")
-        start_date = (datetime.now() - timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
+        end_date = datetime.datetime.now().strftime("%Y%m%d")
+        start_date = (datetime.datetime.now() - datetime.timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
         print(f"\n[任务启动] 扫描范围: {start_date} ~ {end_date}")
         print(f"[配置] 目标线程: {CONFIG['MAX_WORKERS']} | 超时: {CONFIG['REQUEST_TIMEOUT']}s")
 
@@ -611,13 +749,17 @@ def main():
 
         if CONFIG["USE_REAL_TIME_DATA"]:
             try:
-                df_spot = fetch_realtime_snapshot()
-                if df_spot.empty:
-                    print("[终止] 无法获取实时行情快照，终止扫描。")
-                    return
+                # 只有在交易日才尝试获取实时快照
+                if is_trade_day:
+                    df_spot = fetch_realtime_snapshot()
+                    if df_spot.empty:
+                        print("[终止] 无法获取实时行情快照，终止扫描。")
+                        # 此处不 return，让程序继续运行，但后续不会追加实时数据
+                else:
+                    print("[配置] 当前为非交易日，跳过实时快照获取。")
             except Exception as e:
                 print(f"[致命终止] 获取实时行情快照失败: {e}")
-                return
+                # 此处不 return，让程序继续运行，但后续不会追加实时数据
         else:
             print("[配置] 实时数据获取开关关闭 (USE_REAL_TIME_DATA=False)，跳过全市场快照获取。")
 
@@ -676,10 +818,10 @@ def main():
             res_df = res_df.sort_values(["信号排序", "突破力度%"], ascending=[True, False]).drop(columns=["信号排序"])
 
             # 导出 CSV
-            today_date_str = datetime.now().strftime('%Y-%m-%d')
+            today_date_str = datetime.datetime.now().strftime('%Y-%m-%d')
             folder_path = os.path.join(CONFIG["OUTPUT_FOLDER_BASE"], today_date_str)
             os.makedirs(folder_path, exist_ok=True)
-            timestamp = datetime.now().strftime('%H%M%S')
+            timestamp = datetime.datetime.now().strftime('%H%M%S')
             file_name = f"{CONFIG['OUTPUT_FILENAME_BASE']}_{timestamp}.csv"
             full_file_path = os.path.join(folder_path, file_name)
             res_df.to_csv(full_file_path, index=False, encoding=CONFIG["EXPORT_ENCODING"])
