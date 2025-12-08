@@ -88,7 +88,7 @@ CONFIG = {
     "USE_REAL_TIME_DATA": True,
 
     # --- 🆕 是否全量/分批控制 ---
-    "SAMPLE_SIZE": 10,  # 0 或 None 表示全量
+    "SAMPLE_SIZE": 0,  # 0 或 None 表示全量
     "BATCH_SIZE": 200,  # SAMPLE_SIZE 全量才开启分批功能，每批次处理的股票数量
     "BATCH_INTERVAL_SEC": 8,  # 批次间隔休息时间（秒）
 
@@ -529,13 +529,6 @@ def append_today_realtime_snapshot(code: str, df_daily: pd.DataFrame, df_spot: p
         if last_history_date > latest_date:
             print(f"[{code}] 警告: 历史数据日期 {last_history_date} 晚于当前日期 {latest_date}，跳过拼接。")
             return df_daily
-
-    # ----------------------------------------------------
-    # 4. 构造新的当日 K 线数据并追加
-    # ----------------------------------------------------
-
-    # 调试点 4：如果执行到这里，说明即将拼接
-    print(f"[{code}] 调试 4: 准备追加实时数据 {latest_date}，最新价: {latest_data.get('close')}。")
 
     new_row_data = {
         'date': latest_date,
