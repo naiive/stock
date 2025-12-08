@@ -53,16 +53,16 @@ if __name__ == "__main__":
     # print(df)
     # print("------------历史-----------")
     #
-    # # period: 分钟周期，支持 '1' '5' '15' '30' '60'
-    # df2 = get_minute_data("sh600269", period="5")
-    # print("------------实时-----------")
-    # print(df2)
-    # print("------------实时-----------")
+    # period: 分钟周期，支持 '1' '5' '15' '30' '60'
+    df2 = get_minute_data("sh600269", period="5")
+    print("------------实时-----------")
+    print(df2)
+    print("------------实时-----------")
 
-    df3 = fetch_realtime_snapshot()
-    print("------------实时全量-----------")
-    print(df3)
-    print("------------实时全量-----------")
+    # df3 = fetch_realtime_snapshot()
+    # print("------------实时全量-----------")
+    # print(df3)
+    # print("------------实时全量-----------")
 
     # # 1. 提取 df2 中 day 列的日期部分（去除时间）
     # df2['date'] = pd.to_datetime(df2['day']).dt.date
