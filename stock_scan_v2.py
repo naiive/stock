@@ -34,17 +34,17 @@ from stock_query import stock_zh_a_daily_mysql
 # 模块 1：配置 (Configuration)
 # ============================================================
 CONFIG = {
-    # --- 时间范围 ---
+    # ---🆕 时间范围 ---
     "DAYS": 365,  # 扫描回溯天数 (用于计算 MA200)
 
-    # --- 过滤条件 ---
+    # --- 🆕过滤条件 ---
     "EXCLUDE_GEM": True,  # 排除创业板（300）
     "EXCLUDE_KCB": True,  # 排除科创板（688、689）
     "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
     "EXCLUDE_ST": False,  # 排除 ST/退
     "ADJUST": "qfq",      # 复权方式
 
-    # --- SQZ策略参数 ---
+    # --- 🆕SQZ策略参数 ---
     "SQZ": {
         "length": 20,
         "mult": 2.0,
@@ -53,18 +53,17 @@ CONFIG = {
         "useTrueRange": True
     },
 
-    # --- PIVOT策略参数 ---
+    # --- 🆕PIVOT策略参数 ---
     "PIVOT_LEFT": 15,   # 左侧 K 线数量
     "PIVOT_RIGHT": 15,  # 右侧 K 线数量
 
-    # --- 文件路径/名称 ---
+    # --- 🆕文件路径/名称 ---
     "CACHE_FILE": "stock_list_cache.json",
     "EXPORT_ENCODING": "utf-8-sig",  # CSV文件导出编码
     "OUTPUT_FILENAME_BASE": "Buy_Stocks",
     "OUTPUT_FOLDER_BASE": "Day_Stocks",
 
-    # --- 抽样/并发 (已优化) ---
-    "SAMPLE_SIZE": 300,     # 0 或 None 表示全量
+    # --- 🆕并发 ---
     "MAX_WORKERS": 10,      # 降低线程数到 10
     "REQUEST_TIMEOUT": 20,  # 增加超时时间到 20s
 
@@ -73,13 +72,14 @@ CONFIG = {
     # False: 使用 ak.stock_zh_a_daily (AkShare)
     "USE_LOCAL_MYSQL": True, # 👈 默认使用 AkShare
 
-    # 实时数据开关 (用于控制是否获取今日实时快照)
+    # --- 🆕实时数据开关 (用于控制是否获取今日实时快照)---
     # True: 使用腾讯实时股票全量接口 (fetch_realtime_snapshot)
     # False: 不使用，跳过实时数据获取（用于离线回测或非交易日）
     "USE_REAL_TIME_DATA": False,
 
-    # --- 分批控制 ---
-    "BATCH_SIZE": 120,        # 每批次处理的股票数量
+    # --- 🆕 是否全量/分批控制 ---
+    "SAMPLE_SIZE": 0,         # 0 或 None 表示全量
+    "BATCH_SIZE": 200,        # 每批次处理的股票数量
     "BATCH_INTERVAL_SEC": 8,  # 批次间隔休息时间（秒）
 
     # --- 🆕 手动输入 ---
