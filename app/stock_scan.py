@@ -23,7 +23,6 @@ import json
 import time
 import random
 import math
-import re
 import datetime
 from concurrent.futures import ThreadPoolExecutor, wait, TimeoutError as ThreadingTimeoutError
 
@@ -34,7 +33,7 @@ import asyncio
 from tqdm import tqdm
 
 try:
-    from stock_query import stock_zh_a_daily_mysql
+    from api.stock_query import stock_zh_a_daily_mysql
 except ImportError:
     print("[警告] 无法导入 stock_zh_a_daily_mysql。请确保您的 stock_query.py 文件存在。")
     def stock_zh_a_daily_mysql(*args, **kwargs):
@@ -71,7 +70,7 @@ CONFIG = {
     "CACHE_FILE": "stock_list_cache.json",
     "EXPORT_ENCODING": "utf-8-sig",        # CSV文件导出编码
     "OUTPUT_FILENAME_BASE": "Buy_Stocks",  # 输出文件前缀
-    "OUTPUT_FOLDER_BASE": "Day_Stocks",    # LogRedirector 也使用此文件夹
+    "OUTPUT_FOLDER_BASE": "stocks",    # LogRedirector 也使用此文件夹
 
     # --- 🆕 并发 ---
     "MAX_WORKERS": 10,      # 降低线程数到 10
@@ -108,8 +107,8 @@ class LogRedirector:
     # 20MB 轮换限制
     MAX_BYTES = 20 * 1024 * 1024
 
-    def __init__(self, folder="Day_Stocks"):
-        # 日志路径: Day_Stocks/logs/YYYYMMDD/
+    def __init__(self, folder="stocks"):
+        # 日志路径: stocks/logs/YYYYMMDD/
         self.today_str = datetime.datetime.now().strftime('%Y%m%d')
         self.log_dir = os.path.join(folder, "logs", self.today_str)
         os.makedirs(self.log_dir, exist_ok=True)

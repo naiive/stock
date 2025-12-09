@@ -14,7 +14,7 @@ import pandas as pd
 from tqdm import tqdm
 
 # ✅ 使用你自己的 MySQL 接口
-from stock_query import stock_zh_a_daily_mysql
+from api.stock_query import stock_zh_a_daily_mysql
 
 
 # =========================

@@ -5,7 +5,7 @@
 ============================================================
 A 股历史数据批量导入 MySQL 脚本（Upsert 优化版 - 附带 Logging 和动态目录）
 说明：
-- 日志文件将保存到当前目录下的 Day_Stocks/YYYYMMDD 文件夹中。
+- 日志文件将保存到当前目录下的 stocks/YYYYMMDD 文件夹中。
 - 核心功能改为基于主键的 **更新或插入 (Upsert)**。
 ============================================================
 """
@@ -30,7 +30,7 @@ from sqlalchemy import create_engine, text
 
 # 1. 确定日期和基础目录
 CURRENT_DATE_STR = datetime.now().strftime("%Y%m%d")
-LOG_BASE_DIR = "Day_Stocks/logs"
+LOG_BASE_DIR = "../logs"
 LOG_DAILY_DIR = os.path.join(LOG_BASE_DIR, CURRENT_DATE_STR)
 
 # 2. 创建目录 (如果不存在)
@@ -40,7 +40,7 @@ try:
 except Exception as e:
     # 如果创建目录失败（权限等问题），则退回到当前目录
     print(f"警告：无法创建日志目录 {LOG_DAILY_DIR}。日志将保存到当前目录。错误: {e}")
-    LOG_DAILY_DIR = "."
+    LOG_DAILY_DIR = ".."
 
 LOG_FILE = os.path.join(LOG_DAILY_DIR, "stock_data_pull.log")
 # ------------------- /动态日志目录配置 -------------------
