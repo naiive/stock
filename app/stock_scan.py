@@ -71,7 +71,7 @@ CONFIG = {
     "EXPORT_ENCODING": "utf-8-sig",        # CSV文件导出编码
     "OUTPUT_FILENAME_BASE": "Buy_Stocks",  # 输出文件前缀
     "OUTPUT_FOLDER_BASE": "stocks",        # csv输出 文件夹
-    "OUTPUT_LOG": "logs",                  # LogRedirector 日志输出文件夹
+    "OUTPUT_LOG": "../logs",               # LogRedirector 日志输出文件夹
 
     # --- 🆕 并发 ---
     "MAX_WORKERS": 10,      # 降低线程数到 10
