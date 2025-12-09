@@ -839,9 +839,9 @@ def main():
             # =============================================================
             # 🆕 排序逻辑修改：
             # 1. 主要排序键：'得分' (越高越好，ascending=False)
-            # 2. 次要排序键：'突破力度%' (越高越好，ascending=False)
+            # 2. 次要排序键：'涨幅%' (越高越好，ascending=False)
             # =============================================================
-            res_df = res_df.sort_values(["得分", "突破力度%"], ascending=[False, False]).reset_index(drop=True)
+            res_df = res_df.sort_values(["得分", "涨幅%"], ascending=[False, False]).reset_index(drop=True)
 
             # 导出 CSV
             today_date_str = datetime.datetime.now().strftime('%Y-%m-%d')
