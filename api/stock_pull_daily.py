@@ -105,7 +105,7 @@ CONFIG = {
     # 并发与超时
     "MAX_WORKERS": 6,       # 建议 2~4 更稳
     "REQUEST_TIMEOUT": 28,  # 单次 akshare 请求超时（秒）
-    "CACHE_FILE": "stock_list_cache.json",
+    "CACHE_FILE": "conf/stock_list_cache.json",
 
     # 重试策略（fetch_data_only 内部）
     "RETRY_TIMES": 2,

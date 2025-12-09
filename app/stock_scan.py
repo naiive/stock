@@ -67,7 +67,7 @@ CONFIG = {
     "PIVOT_RIGHT": 15,  # 右侧 K 线数量
 
     # --- 🆕 文件路径/名称 ---
-    "CACHE_FILE": "stock_list_cache.json",
+    "CACHE_FILE": "conf/stock_list_cache.json",
     "EXPORT_ENCODING": "utf-8-sig",        # CSV文件导出编码
     "OUTPUT_FILENAME_BASE": "Buy_Stocks",  # 输出文件前缀
     "OUTPUT_FOLDER_BASE": "stocks",    # LogRedirector 也使用此文件夹
