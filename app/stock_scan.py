@@ -71,7 +71,7 @@ CONFIG = {
     "EXPORT_ENCODING": "utf-8-sig",        # CSV文件导出编码
     "OUTPUT_FILENAME_BASE": "Buy_Stocks",  # 输出文件前缀
     "OUTPUT_FOLDER_BASE": "stocks",        # csv输出 文件夹
-    "OUTPUT_LOG": "../logs",               # LogRedirector 日志输出文件夹
+    "OUTPUT_LOG": "logs",               # LogRedirector 日志输出文件夹
 
     # --- 🆕 并发 ---
     "MAX_WORKERS": 10,      # 降低线程数到 10
@@ -111,7 +111,7 @@ class LogRedirector:
     def __init__(self, folder="stocks"):
         # 日志路径: stocks/logs/YYYYMMDD/
         self.today_str = datetime.datetime.now().strftime('%Y%m%d')
-        self.log_dir = os.path.join(folder, "logs", self.today_str)
+        self.log_dir = os.path.join(folder, self.today_str)
         os.makedirs(self.log_dir, exist_ok=True)
 
         self.terminal = sys.stdout
