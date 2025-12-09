@@ -70,7 +70,8 @@ CONFIG = {
     "CACHE_FILE": "conf/stock_list_cache.json",
     "EXPORT_ENCODING": "utf-8-sig",        # CSV文件导出编码
     "OUTPUT_FILENAME_BASE": "Buy_Stocks",  # 输出文件前缀
-    "OUTPUT_FOLDER_BASE": "stocks",    # LogRedirector 也使用此文件夹
+    "OUTPUT_FOLDER_BASE": "stocks",        # csv输出 文件夹
+    "OUTPUT_LOG": "logs",                  # LogRedirector 日志输出文件夹
 
     # --- 🆕 并发 ---
     "MAX_WORKERS": 10,      # 降低线程数到 10
@@ -757,7 +758,7 @@ def main():
         load_trade_calendar()
 
     # 使用 LogRedirector 启动日志管理
-    with LogRedirector(folder=CONFIG['OUTPUT_FOLDER_BASE']) as log_redirector:
+    with LogRedirector(folder=CONFIG['OUTPUT_LOG']) as log_redirector:
 
         end_date = datetime.datetime.now().strftime("%Y%m%d")
         start_date = (datetime.datetime.now() - datetime.timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
