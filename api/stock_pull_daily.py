@@ -90,7 +90,7 @@ CONFIG = {
     # !!! 数据库要求：目标表 a_stock_daily 必须设置 (date, code, adjust) 为联合主键。
 
     # 抓取范围控制（优先级从高到低）
-    "TARGET_STOCKS": ["600519"],      # 优先级最高：指定需要更新的股票代码列表["600519", "600520"]。空列表 [] 表示全量。
+    "TARGET_STOCKS": [],      # 优先级最高：指定需要更新的股票代码列表["600519", "600520"]。空列表 [] 表示全量。
     "TARGET_START_DATE": "",  # 优先级次之：指定开始日期，格式 "YYYYMMDD"。
     "TARGET_END_DATE": "",    # 优先级次之：指定结束日期，格式 "YYYYMMDD"。
     "DAYS": 1,              # 优先级最低：如果 TARGET_START_DATE 为空，则抓取最近 DAYS 天的数据。
