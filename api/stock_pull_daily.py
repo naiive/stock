@@ -30,7 +30,7 @@ from sqlalchemy import create_engine, text
 
 # 1. 确定日期和基础目录
 CURRENT_DATE_STR = datetime.now().strftime("%Y%m%d")
-LOG_BASE_DIR = "../logs"
+LOG_BASE_DIR = "logs"
 LOG_DAILY_DIR = os.path.join(LOG_BASE_DIR, CURRENT_DATE_STR)
 
 # 2. 创建目录 (如果不存在)
@@ -93,7 +93,7 @@ CONFIG = {
     "TARGET_STOCKS": [],      # 优先级最高：指定需要更新的股票代码列表["600519", "600520"]。空列表 [] 表示全量。
     "TARGET_START_DATE": "",  # 优先级次之：指定开始日期，格式 "YYYYMMDD"。
     "TARGET_END_DATE": "",    # 优先级次之：指定结束日期，格式 "YYYYMMDD"。
-    "DAYS": 1,              # 优先级最低：如果 TARGET_START_DATE 为空，则抓取最近 DAYS 天的数据。
+    "DAYS": 1,                # 优先级最低：如果 TARGET_START_DATE 为空，则抓取最近 DAYS 天的数据。
 
     # 过滤
     "EXCLUDE_GEM": True,  # 排除创业板（300、301）
