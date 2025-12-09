@@ -32,6 +32,8 @@ import akshare as ak
 import asyncio
 from tqdm import tqdm
 
+from api.tradingview_api_client import get_tech_indicators_robust
+
 try:
     from api.stock_query import stock_zh_a_daily_mysql
 except ImportError:
@@ -672,7 +674,8 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         return {
             "代码": code,
             "得分": score,
-            # 🆕 新增结果
+            # 规则：收盘价 > 前阻力位价格 (last_pivot) -> "高"；否则 "低"
+            # 顺序：倒数第4天-倒数第3天-倒数第2天
             "突破趋势": break_trend,
             "当前价": round(current_close, 2),
             "涨幅%": round(pct_chg, 2),
@@ -842,6 +845,19 @@ def main():
             # 2. 次要排序键：'涨幅%' (越高越好，ascending=False)
             # =============================================================
             res_df = res_df.sort_values(["得分", "涨幅%"], ascending=[False, False]).reset_index(drop=True)
+
+            # =============================================================
+            # 🆕 添加tradingview_api 返回的指标集合
+            # =============================================================
+            code_list = res_df['代码'].astype(str).tolist()
+            all_indicators = []
+            for code in code_list:
+                # 对每个代码调用一次函数，并获取单行 DataFrame
+                df_single_row = get_tech_indicators_robust(code)
+                all_indicators.append(df_single_row)
+
+            df_all_techs = pd.concat(all_indicators, ignore_index=True)
+            res_df = pd.merge(res_df, df_all_techs, on='代码', how='left')
 
             # 导出 CSV
             today_date_str = datetime.datetime.now().strftime('%Y-%m-%d')
