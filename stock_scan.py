@@ -646,12 +646,12 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         # ===================================================
 
         # 获取倒数第 4, 3, 2 天的收盘价
-        close_D1 = df['close'].iloc[-4]  # 3天前
-        close_D2 = df['close'].iloc[-3]  # 2天前
-        close_D3 = df['close'].iloc[-1]  # 1天前 (Yesterday)
+        close_D1 = df['close'].iloc[-4]  # 倒数第4天
+        close_D2 = df['close'].iloc[-3]  # 倒数第3天
+        close_D3 = df['close'].iloc[-2]  # 倒数第2天
 
         # 规则：收盘价 > 前阻力位价格 (last_pivot) -> "高"；否则 "低"
-        # 顺序：1天前-2天前-3天前
+        # 顺序：倒数第4天-倒数第3天-倒数第2天
 
         # 计算每个日期的突破状态 (0: 高, 1: 低)
         status_D1 = 0 if close_D1 > last_pivot else 1
