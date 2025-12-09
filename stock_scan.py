@@ -85,7 +85,7 @@ CONFIG = {
     # --- 🆕 实时数据开关 ---
     # True:  使用腾讯实时股票全量接口 (fetch_realtime_snapshot)
     # False: 不使用，跳过实时数据获取（用于离线回测或非交易日）
-    "USE_REAL_TIME_DATA": False,
+    "USE_REAL_TIME_DATA": True,
 
     # --- 🆕 是否全量/分批控制 ---
     "SAMPLE_SIZE": 0,         # 0 或 None 表示全量
@@ -583,7 +583,7 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
 
 
 # ============================================================
-# 模块 8：单只股票策略（整合）
+# 模块 8：单只股票策略（整合） - 增加 "突破趋势" 和 "得分"
 # ============================================================
 def strategy_single_stock(code, start_date, end_date, df_spot):
     symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
@@ -597,6 +597,9 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         # 调用实时股票行情拼接接口
         if CONFIG["USE_REAL_TIME_DATA"]:
             df = append_today_realtime_snapshot(code, df, df_spot)
+
+        # 确保数据长度足够计算前3天
+        if len(df) < 5: return None
 
         current_close = float(df['close'].iloc[-1])
         prev_close = float(df['close'].iloc[-2])
@@ -638,16 +641,47 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
 
         last_val = last.get("val")
 
+        # ===================================================
+        # 🆕 增加 "突破趋势" 和 "得分" 的计算逻辑
+        # ===================================================
+
+        # 获取倒数第 4, 3, 2 天的收盘价
+        close_D1 = df['close'].iloc[-4]  # 3天前
+        close_D2 = df['close'].iloc[-3]  # 2天前
+        close_D3 = df['close'].iloc[-1]  # 1天前 (Yesterday)
+
+        # 规则：收盘价 > 前阻力位价格 (last_pivot) -> "高"；否则 "低"
+        # 顺序：1天前-2天前-3天前
+
+        # 计算每个日期的突破状态 (0: 高, 1: 低)
+        status_D1 = 0 if close_D1 > last_pivot else 1
+        status_D2 = 0 if close_D2 > last_pivot else 1
+        status_D3 = 0 if close_D3 > last_pivot else 1
+
+        # 构造 "突破趋势" 字符串
+        trend_D1 = "高" if status_D1 == 0 else "低"
+        trend_D2 = "高" if status_D2 == 0 else "低"
+        trend_D3 = "高" if status_D3 == 0 else "低"
+
+        break_trend = f"{trend_D1}-{trend_D2}-{trend_D3}"
+
+        # 计算 "得分" (低为 1 分，高为 0 分)
+        score = status_D1 + status_D2 + status_D3
+        # ===================================================
+
         return {
             "代码": code,
-            "信号": signal,
+            "得分": score,
+            # 🆕 新增结果
+            "突破趋势": break_trend,
             "当前价": round(current_close, 2),
             "涨幅%": round(pct_chg, 2),
             "MA200": round(ma200, 2),
             "前阻力位": round(float(last_pivot), 2),
             "突破力度%": round(break_strength, 2),
             "BB值": None if pd.isna(last_val) else round(float(last_val), 2),
-            "BB中文": last.get("val_color")
+            "BB中文": last.get("val_color"),
+            "信号": signal
         }
 
     except ThreadingTimeoutError:
@@ -657,7 +691,6 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
     except Exception as e:
         print(f"[错误] {code} 处理失败: {e}")
         return None
-
 
 # ============================================================
 # 模块 9：并发扫描 (Async Scheduler)
@@ -741,13 +774,15 @@ def main():
                 if is_trade_day:
                     df_spot = fetch_realtime_snapshot()
                     if df_spot.empty:
+                        # ⚠️ 关键修改：当 df_spot 为空时，程序退出
                         print("[终止] 无法获取实时行情快照，终止扫描。")
-                        # 此处不 return，让程序继续运行，但后续不会追加实时数据
+                        sys.exit(1)
                 else:
                     print("[配置] 当前为非交易日，跳过实时快照获取。")
             except Exception as e:
+                # ⚠️ 关键修改：当 df_spot 为空时，程序退出
                 print(f"[致命终止] 获取实时行情快照失败: {e}")
-                # 此处不 return，让程序继续运行，但后续不会追加实时数据
+                sys.exit(1)
         else:
             print("[配置] 实时数据获取开关关闭 (USE_REAL_TIME_DATA=False)，跳过全市场快照获取。")
 
@@ -801,9 +836,12 @@ def main():
             else:
                 res_df.insert(1, "名称", "未知")
 
-            signal_order = {"买入": 0, "观察": 1, "无": 2}
-            res_df["信号排序"] = res_df["信号"].map(signal_order).fillna(3)
-            res_df = res_df.sort_values(["信号排序", "突破力度%"], ascending=[True, False]).drop(columns=["信号排序"])
+            # =============================================================
+            # 🆕 排序逻辑修改：
+            # 1. 主要排序键：'得分' (越高越好，ascending=False)
+            # 2. 次要排序键：'突破力度%' (越高越好，ascending=False)
+            # =============================================================
+            res_df = res_df.sort_values(["得分", "突破力度%"], ascending=[False, False]).reset_index(drop=True)
 
             # 导出 CSV
             today_date_str = datetime.datetime.now().strftime('%Y-%m-%d')
