@@ -5,7 +5,16 @@ import random
 import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple, Union
 
+# =========================================================
+#  ✅ 查询成功！返回 DataFrame 结构:
+#     震荡指标综合建议   所有指标综合建议  ... Pivot.M.Demark.Middle Pivot.M.Demark.S1
+#  0  -0.1818 (卖出)  -0.5576 (卖出)  ...        1460.6625 (中立)    1435.2550 (中立)
+#
+#  ❌ 查询失败！返回 DataFrame 结构:
+#     震荡指标综合建议   所有指标综合建议  ... Pivot.M.Demark.Middle Pivot.M.Demark.S1
+#  0  N/A (N/A)  N/A (N/A)  ...             N/A (N/A)         N/A (N/A)
 
+# ============================================================
 # --- 自定义异常类 (保留但不会在主逻辑中抛出) ---
 class TechIndicatorError(Exception):
     """用于表示技术指标获取或处理失败的自定义异常。"""
