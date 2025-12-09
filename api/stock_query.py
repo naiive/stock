@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, Literal
 import conf.config as conf
 
+# 查询股票历史数据接口
 
 # =========================================================
 # 1. 配置信息
