@@ -2,18 +2,14 @@ import pandas as pd
 from sqlalchemy import create_engine, Engine
 from datetime import datetime
 from typing import Optional, Literal
+import conf.config as conf
+
 
 # =========================================================
 # 1. 配置信息
 # =========================================================
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "Elaiza112233",
-    "database": "stock"
-}
-TABLE_NAME = "a_stock_daily"
+DB_CONFIG = conf.DB_CONFIG
+TABLE_NAME = conf.MYSQL_TABLE
 
 # **全局变量：存储唯一的 Engine 实例**
 # 使用单例模式的关键：确保 Engine 只被创建一次
