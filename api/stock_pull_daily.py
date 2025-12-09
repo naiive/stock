@@ -26,6 +26,8 @@ from tqdm import tqdm
 
 from sqlalchemy import create_engine, text
 
+import conf.config as conf
+
 # ------------------- 动态日志目录配置 -------------------
 
 # 1. 确定日期和基础目录
@@ -77,15 +79,9 @@ if not logger.handlers:
 # ------------------- 配置 -------------------
 CONFIG = {
     # MySQL
-    "DB": {
-        "host": "localhost",
-        "port": 3306,
-        "user": "root",
-        "password": "Elaiza112233",
-        "database": "stock"
-    },
+    "DB": conf.DB_CONFIG,
 
-    "MYSQL_TABLE": "a_stock_daily",
+    "MYSQL_TABLE": conf.MYSQL_TABLE,
 
     # !!! 数据库要求：目标表 a_stock_daily 必须设置 (date, code, adjust) 为联合主键。
 
