@@ -849,15 +849,15 @@ def main():
             # =============================================================
             # 🆕 添加tradingview_api 返回的指标集合
             # =============================================================
-            code_list = res_df['代码'].astype(str).tolist()
-            all_indicators = []
-            for code in code_list:
-                # 对每个代码调用一次函数，并获取单行 DataFrame
-                df_single_row = get_tech_indicators_robust(code)
-                all_indicators.append(df_single_row)
-
-            df_all_techs = pd.concat(all_indicators, ignore_index=True)
-            res_df = pd.merge(res_df, df_all_techs, on='代码', how='left')
+            # code_list = res_df['代码'].astype(str).tolist()
+            # all_indicators = []
+            # for code in code_list:
+            #     # 对每个代码调用一次函数，并获取单行 DataFrame
+            #     df_single_row = get_tech_indicators_robust(code)
+            #     all_indicators.append(df_single_row)
+            #
+            # df_all_techs = pd.concat(all_indicators, ignore_index=True)
+            # res_df = pd.merge(res_df, df_all_techs, on='代码', how='left')
 
             # 导出 CSV
             today_date_str = datetime.datetime.now().strftime('%Y-%m-%d')
