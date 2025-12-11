@@ -685,10 +685,10 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
             "突破趋势": break_trend,
             "当前价": round(current_close, 2),
             "涨幅%": round(pct_chg, 2),
+            "BB值": None if pd.isna(last_val) else round(float(last_val), 2),
             "MA200": round(ma200, 2),
             "前阻力位": round(float(last_pivot), 2),
             "突破力度%": round(break_strength, 2),
-            "BB值": None if pd.isna(last_val) else round(float(last_val), 2),
             "BB中文": last.get("val_color"),
             "信号": signal
         }
