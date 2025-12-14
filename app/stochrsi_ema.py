@@ -3,13 +3,14 @@
 
 """
 ============================================================
-A 股突破扫描系统（StochRSI + EMA 趋势过滤）
-版本：v4.0 (增加 ATR 止盈止损位计算)
+A 股突破扫描系统（StochRSI + EMA 趋势过滤 + ADX 趋势强度）
+版本：v5.3 (新增 ADX 信号列)
 
 【核心策略】
 1. StochRSI 信号: K 线上穿超卖水平 (默认 20)，且 K > D (金叉)。
 2. 趋势过滤: 当前收盘价 > EMA50 > EMA200 (强势上涨趋势)。
-3. ATR 动态止损: 信号价 - N * ATR。
+3. ADX 趋势强度: ADX > N 且 +DI > -DI (趋势强劲且方向正确)。
+4. ATR 动态止损: 基于 Pine Script 风格 (Low - N * ATR)。
 ============================================================
 """
 import os
@@ -30,7 +31,7 @@ from tqdm import tqdm
 from api.stock_query import stock_zh_a_daily_mysql
 
 # ============================================================
-# 模块 1：配置 (Configuration) (增加 ATR 参数)
+# 模块 1：配置 (Configuration)
 # ============================================================
 CONFIG = {
     # --- 🆕 时间范围 ---
@@ -52,17 +53,23 @@ CONFIG = {
         "oversoldLevel": 20
     },
 
-    # --- 🆕 ATR 止盈止损参数 ---
+    # --- 🆕 ATR 止盈止损参数 (短线优化参数) ---
     "ATR_SETTING": {
         "lengthATR": 7,
-        "stop_loss_multiplier": 1.5,  # 止损倍数 M
-        "take_profit_multiplier": 1.2  # 止盈倍数
+        "stop_loss_multiplier": 2.0,  # 止损倍数 M (推荐 1.5-2.0 用于短线)
+        "take_profit_multiplier": 4.0  # 止盈倍数 (推荐 2倍止损)
+    },
+
+    # --- 🆕 ADX 趋势强度参数 (新增) ---
+    "ADX_SETTING": {
+        "lengthADX": 14,
+        "adx_threshold": 20.0,  # 趋势强度门槛 (通常 20-25)
     },
 
     # --- 🆕 文件路径/名称 (保持不变) ---
     "CACHE_FILE": "../conf/stock_list_cache.json",
     "EXPORT_ENCODING": "utf-8-sig",  # CSV文件导出编码
-    "OUTPUT_FILENAME_BASE": "Buy_Stocks_StochRSI_EMA_ATR",  # 输出文件前缀
+    "OUTPUT_FILENAME_BASE": "Buy_Stocks_StochRSI_EMA_ADX_ATR",  # 输出文件前缀
     "OUTPUT_FOLDER_BASE": "../stocks",  # csv输出 文件夹
     "OUTPUT_LOG": "../logs",  # LogRedirector 日志输出文件夹
 
@@ -78,16 +85,15 @@ CONFIG = {
     "BATCH_INTERVAL_SEC": 1,
 
     # --- 🆕 手动输入 (保持不变) ---
-    "MANUAL_STOCK_LIST": []
+    "MANUAL_STOCK_LIST": [""]
 }
 
 
 # ============================================================
-# 模块 A：Pine Script 核心平滑函数 (StochRSI/EMA 计算基础) (保持不变)
+# 模块 A：Pine Script 核心平滑函数
 # ============================================================
 def pine_rma(series, length):
-    """ RMA (Wilder's Smoothing) - 用于精确 RSI/ATR 计算 """
-    # 强制转换为 Series 以确保 .ewm() 可用
+    """ RMA (Wilder's Smoothing) - 用于精确 RSI/ATR/ADX 计算 """
     if not isinstance(series, pd.Series):
         series = pd.Series(series)
     alpha = 1 / length
@@ -96,7 +102,6 @@ def pine_rma(series, length):
 
 def pine_sma(series, length):
     """ Simple Moving Average (SMA) - 用于精确 StochRSI K/D 平滑 """
-    # 强制转换为 Series 以确保 .rolling() 可用
     if not isinstance(series, pd.Series):
         series = pd.Series(series)
     return series.rolling(length).mean()
@@ -104,7 +109,6 @@ def pine_sma(series, length):
 
 def pine_ema(series, length):
     """ EMA (Exponential Moving Average) - 用于精确 EMA 50/200 趋势过滤 """
-    # 强制转换为 Series 以确保 .ewm() 可用
     if not isinstance(series, pd.Series):
         series = pd.Series(series)
     alpha = 2 / (length + 1)
@@ -112,10 +116,10 @@ def pine_ema(series, length):
 
 
 # ============================================================
-# 模块 B：StochRSI 核心计算 & ATR 计算 (新增 ATR)
+# 模块 B：StochRSI 核心计算 & ATR & ADX 计算
 # ============================================================
 def calculate_stoch_rsi_values(series, length_rsi, length_stoch):
-    """计算 StochRSI 的原始 K 值 (已修复类型错误)"""
+    """计算 StochRSI 的原始 K 值"""
     if not isinstance(series, pd.Series):
         series = pd.Series(series)
 
@@ -129,7 +133,6 @@ def calculate_stoch_rsi_values(series, length_rsi, length_stoch):
     rs_arr = np.where(down_avg != 0, up_avg / down_avg, np.inf)
     rsi_arr = 100 - (100 / (1 + rs_arr))
 
-    # 关键修正：将 NumPy 数组转换回 Pandas Series
     rsi = pd.Series(rsi_arr, index=series.index)
 
     lowest_rsi = rsi.rolling(length_stoch).min()
@@ -155,42 +158,75 @@ def calculate_stoch_rsi_signal_and_values(df, length_rsi=14, length_stoch=14, sm
     k_gt_d = (k > d)
     buy_signal_raw = k_crossover_level & k_gt_d
 
+    # 返回最新的 K, D 值和信号
     return k.iloc[-1], d.iloc[-1], buy_signal_raw.iloc[-1]
 
 
 def calculate_atr(df, length=14):
-    """
-    计算 Average True Range (ATR)，使用 RMA (Wilder's Smoothing) 平滑。
-    TR = Max[ (H - L), Abs(H - C[1]), Abs(L - C[1]) ]
-    ATR = RMA(TR, length)
-    """
-    df = df.copy()
-    high = df['high']
-    low = df['low']
-    close_prev = df['close'].shift(1)
+    """ 计算 Average True Range (ATR)，使用 RMA (Wilder's Smoothing) 平滑。"""
+    df_temp = df.copy()
+    high = df_temp['high']
+    low = df_temp['low']
+    close_prev = df_temp['close'].shift(1)
 
-    # True Range (TR)
     tr1 = high - low
     tr2 = (high - close_prev).abs()
     tr3 = (low - close_prev).abs()
 
-    # max() 操作会返回 Series
     true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    # 使用 pine_rma 进行平滑计算 ATR
     atr_series = pine_rma(true_range, length)
 
     return atr_series.iloc[-1]
 
 
+# ADX 计算函数
+def calculate_adx_values(df, length=14):
+    """
+    计算 ADX, +DI (PDI) 和 -DI (MDI)，使用 RMA 平滑。
+    """
+    df_temp = df.copy()
+    high = df_temp['high']
+    low = df_temp['low']
+
+    # Directional Movement (+DM 和 -DM)
+    up = high - high.shift(1)
+    down = low.shift(1) - low
+
+    pdm = np.where((up > down) & (up > 0), up, 0)
+    mdm = np.where((down > up) & (down > 0), down, 0)
+
+    # 辅助计算 TR
+    df['TR_Temp'] = pd.concat([high - low, (high - df['close'].shift(1)).abs(), (low - df['close'].shift(1)).abs()],
+                              axis=1).max(axis=1)
+
+    # 平滑
+    atr_smooth = pine_rma(df['TR_Temp'], length)
+    pdm_smooth = pine_rma(pd.Series(pdm, index=df.index), length)
+    mdm_smooth = pine_rma(pd.Series(mdm, index=df.index), length)
+
+    # DI
+    pdi = (pdm_smooth / atr_smooth) * 100
+    mdi = (mdm_smooth / atr_smooth) * 100
+
+    # DX
+    sum_di = pdi + mdi
+    dx = np.where(sum_di != 0, (pdi - mdi).abs() / sum_di * 100, 0)
+
+    # ADX
+    adx = pine_rma(pd.Series(dx, index=df.index), length)
+
+    # 返回最新的 ADX, PDI, MDI 值
+    return adx.iloc[-1], pdi.iloc[-1], mdi.iloc[-1]
+
+
 # ============================================================
 # 模块 2 - 7 (LogRedirector, 交易日历, 重试装饰器, 股票列表, 实时数据)
-# 此处省略，保持与 V3.0 完全一致，以节省篇幅。
-# (注意：在实际代码文件中，您应该保留这些模块的完整代码)
 # ============================================================
+# --- 由于代码限制，保留核心依赖模块以便代码运行，其他省略部分假设存在且功能正确 ---
+# (LogRedirector, is_trade_day, load_trade_calendar, retry, fetch_stock_list_safe, get_stock_list_manager, filter_stock_list, fetch_realtime_snapshot, append_today_realtime_snapshot, fetch_data_with_timeout 保持不变)
 
 class LogRedirector:
-    # ... (与 V3.0 保持一致)
     MAX_BYTES = 20 * 1024 * 1024
 
     def __init__(self, folder="stocks"):
@@ -255,8 +291,7 @@ class LogRedirector:
 
     def flush(self):
         self.terminal.flush()
-        if self.log_file:
-            self.log_file.flush()
+        if self.log_file: self.log_file.flush()
 
 
 _TRADE_CALENDAR = set()
@@ -271,8 +306,8 @@ def load_trade_calendar():
     try:
         print("[系统] 正在加载交易日历...")
         calendar_df = ak.tool_trade_date_hist_sina()
-        if calendar_df.empty or 'trade_date' not in calendar_df.columns:
-            raise ValueError("交易日历数据结构不正确或为空。")
+        if calendar_df.empty or 'trade_date' not in calendar_df.columns: raise ValueError(
+            "交易日历数据结构不正确或为空。")
         trade_dates = calendar_df['trade_date'].tolist()
         for d in trade_dates:
             if isinstance(d, str):
@@ -392,7 +427,6 @@ def append_today_realtime_snapshot(code: str, df_daily: pd.DataFrame, df_spot: p
         last_history_date = df_daily_dates.iloc[-1]
         if last_history_date == latest_date: return df_daily
         if last_history_date > latest_date: return df_daily
-
     new_row_data = {
         'date': latest_date, 'open': latest_data.get('open'), 'high': latest_data.get('high'),
         'low': latest_data.get('low'), 'close': latest_data.get('close'),
@@ -432,7 +466,7 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
 
 
 # ============================================================
-# 模块 8：单只股票策略 (增加 ATR 止盈止损计算)
+# 模块 8：单只股票策略 (新增 ADX 信号列)
 # ============================================================
 def strategy_single_stock(code, start_date, end_date, df_spot):
     symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
@@ -441,8 +475,7 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         df = fetch_data_with_timeout(symbol=symbol, start_date=start_date, end_date=end_date, adjust=CONFIG["ADJUST"],
                                      timeout=CONFIG["REQUEST_TIMEOUT"])
 
-        # 确保数据长度足够计算 EMA200/ATR (至少 200 + 1)
-        # ATR 14 需要 14 个数据点来平滑，但安全起见仍使用 220
+        # 确保数据长度足够计算 EMA200/ATR/ADX (ADX/EMA200 需要大量数据)
         if df is None or df.empty or len(df) < 220: return None
 
         # 调用实时股票行情拼接接口
@@ -455,10 +488,11 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         df['date'] = pd.to_datetime(df['date']).dt.date
         df = df.sort_values('date').reset_index(drop=True)
         current_close = df['close'].iloc[-1]
+        current_low = df['low'].iloc[-1]  # 用于 Pine Script 风格止损
 
         # --- 策略核心计算 ---
 
-        # 1. 计算 StochRSI 信号
+        # 1. StochRSI 信号
         k_val, d_val, stoch_rsi_buy_signal = calculate_stoch_rsi_signal_and_values(
             df,
             length_rsi=CONFIG["STOCH_RSI"]["lengthRSI"],
@@ -467,31 +501,40 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
             smooth_d=CONFIG["STOCH_RSI"]["smoothD"],
             oversold_level=CONFIG["STOCH_RSI"]["oversoldLevel"]
         )
-
         if not stoch_rsi_buy_signal: return None
 
-        # 2. 计算 EMA 趋势
+        # 2. EMA 趋势过滤
         ema50 = pine_ema(df['close'], 50).iloc[-1]
         ema200 = pine_ema(df['close'], 200).iloc[-1]
-
-        # 3. 趋势过滤条件: close > EMA50 > EMA200
         trend_filter = (current_close > ema50) and (ema50 > ema200)
-
         if not trend_filter: return None
 
-        # 4. 🆕 计算 ATR 及止盈止损位
+        # 3. 🆕 ADX 趋势强度过滤
+        adx_len = CONFIG["ADX_SETTING"]["lengthADX"]
+        adx_thresh = CONFIG["ADX_SETTING"]["adx_threshold"]
+
+        adx_val, pdi_val, mdi_val = calculate_adx_values(df, length=adx_len)
+
+        # 趋势强度 (ADX > 门槛) 且 方向正确 (+DI > -DI)
+        adx_filter = (adx_val > adx_thresh) and (pdi_val > mdi_val)
+
+        # 🆕 ADX 信号列赋值
+        adx_signal = 'Buy' if adx_filter else ''
+
+        if not adx_filter: return None
+
+        # 4. ATR 及止盈止损位
         atr_length = CONFIG["ATR_SETTING"]["lengthATR"]
         sl_mult = CONFIG["ATR_SETTING"]["stop_loss_multiplier"]
         tp_mult = CONFIG["ATR_SETTING"]["take_profit_multiplier"]
 
         current_atr = calculate_atr(df, length=atr_length)
 
-        # 价格大于 5 元才计算 ATR 止损，防止分母太小
         if current_close < 5.0 and current_close > 0:
-            current_atr = 0  # 小于 5 元的股票暂不进行 ATR 止损计算
+            current_atr = 0  # 价格过低，风险无法准确衡量，暂时跳过 ATR 计算
 
-        # 假设信号发生时的买入价就是当前价 current_close
-        stop_loss_price = current_close - (sl_mult * current_atr)
+        # Pine Script 风格止损: Stop_Loss = Low - M * ATR
+        stop_loss_price = current_low - (sl_mult * current_atr)
         take_profit_price = current_close + (tp_mult * current_atr)
 
         # --- 满足所有条件，构建返回结果 ---
@@ -501,17 +544,21 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         return {
             "代码": code,
             "日期": df['date'].iloc[-1].strftime('%Y-%m-%d'),
-            "信号": 'StochRSI/EMA Buy',
+            "信号": 'StochRSI/EMA/ADX Buy',
             "当前价": round(current_close, 2),
             "涨幅%": round(pct_chg, 2),
             "StochK": round(float(k_val), 2),
             "StochD": round(float(d_val), 2),
             "EMA50": round(float(ema50), 2),
             "EMA200": round(float(ema200), 2),
-            "ATR_14": round(float(current_atr), 3),
+            "ADX": round(float(adx_val), 2),
+            "DI+": round(float(pdi_val), 2),
+            "DI-": round(float(mdi_val), 2),
+            "ADX信号": adx_signal,  # 🆕 新增 ADX 信号
+            "ATR": round(float(current_atr), 3),
             "止损价": round(stop_loss_price, 2),
             "止盈价": round(take_profit_price, 2),
-            "趋势过滤": "满足 (C>E50>E200)",
+            "趋势过滤": "满足 (C>E50>E200 & ADX>M & DI+>DI-)",
         }
 
     except ThreadingTimeoutError:
@@ -524,10 +571,9 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
 
 
 # ============================================================
-# 模块 9 & 10：并发扫描 & 主入口 (仅更新输出列)
+# 模块 9 & 10：并发扫描 & 主入口 (更新输出列)
 # ============================================================
 async def main_scanner_async(stock_codes, df_spot):
-    # ... (保持不变)
     end_date = datetime.datetime.now().strftime("%Y%m%d")
     start_date = (datetime.datetime.now() - datetime.timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
     results = []
@@ -547,7 +593,6 @@ async def main_scanner_async(stock_codes, df_spot):
 
 
 async def batch_scan_manager_async(target_codes, df_spot):
-    # ... (保持不变)
     all_results = []
     batch_size = CONFIG.get("BATCH_SIZE", 500)
     interval = CONFIG.get("BATCH_INTERVAL_SEC", 2)
@@ -580,6 +625,8 @@ def main():
         start_date = (datetime.datetime.now() - datetime.timedelta(days=CONFIG["DAYS"])).strftime("%Y%m%d")
         print(f"\n[任务启动] 扫描范围: {start_date} ~ {end_date}")
         print(f"[配置] 目标线程: {CONFIG['MAX_WORKERS']} | 超时: {CONFIG['REQUEST_TIMEOUT']}s")
+        print(
+            f"[配置] ADX过滤: 周期={CONFIG['ADX_SETTING']['lengthADX']}, 门槛={CONFIG['ADX_SETTING']['adx_threshold']}")
 
         df_spot = pd.DataFrame()
         if CONFIG["USE_REAL_TIME_DATA"]:
@@ -643,12 +690,33 @@ def main():
             file_name = f"{CONFIG['OUTPUT_FILENAME_BASE']}_{timestamp}.csv"
             full_file_path = os.path.join(folder_path, file_name)
 
-            # 🆕 重新排序结果列 (新增 ATR, 止损价, 止盈价)
-            ordered_cols = ["日期", "代码", "名称", "当前价", "涨幅%", "止损价", "止盈价", "ATR_14"]
+            # 🆕 重新排序结果列 (新增 ATR, ADX, DI+, DI- 止损价, 止盈价, ADX信号)
+            ordered_cols = [
+                "日期",
+                "代码",
+                "名称",
+                # "信号",
+                # "趋势过滤",
+                "当前价",
+                "涨幅%",
+                # "StochK",
+                # "StochD",
+                # "EMA50",
+                # "EMA200",
+                # "ADX",
+                # "DI+",
+                # "DI-",
+                "ADX信号",  # 🆕 新增 ADX信号
+                # "ATR",
+                "止损价",
+                # "止盈价"
+            ]
+
+            # 确保只包含实际存在的列
+            ordered_cols = [col for col in ordered_cols if col in res_df.columns]
             res_df = res_df[ordered_cols]
 
             res_df = res_df.sort_values(["涨幅%"], ascending=[False]).reset_index(drop=True)
-
 
             res_df.to_csv(full_file_path, index=False, encoding=CONFIG["EXPORT_ENCODING"])
 
