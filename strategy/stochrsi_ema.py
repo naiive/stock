@@ -38,7 +38,7 @@ def manual_ema(series, length):
 
 
 def calculate_atr(df, length=14):
-    """ 计算 Average True Range (ATR) """
+    """ 计算 Average True Range (ATR)，使用 RMA 平滑 """
     df_temp = df.copy()
     high = df_temp['high']
     low = df_temp['low']
@@ -103,22 +103,22 @@ def calculate_stoch_rsi_signal(df, length_rsi=14, length_stoch=14, smooth_k=3, s
 
 
 # ==========================================
-# main (整合短期涨幅评估)
+# main (整合 Pine Script 风格 ATR 追踪止损)
 # ==========================================
 def main(code):
     # --- ATR 参数配置 ---
     ATR_SETTING = {
-        "lengthATR": 14,
-        "stop_loss_multiplier": 3.0,
-        "take_profit_multiplier": 6.0
+        "lengthATR": 7,
+        "stop_loss_multiplier": 1.5,  # 止损倍数 M
+        "take_profit_multiplier": 1.2  # 止盈倍数
     }
 
-    # --- 🆕 短期评估周期配置 ---
-    LOOKUP_DAYS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    # --- 短期评估周期配置 ---
+    LOOKUP_DAYS = [1, 2, 3]
 
     # 1. 获取数据
     df = stock_zh_a_daily_mysql(
-        symbol="sh" + code,  # 假设您的 code 已经包含了 sh/sz/等等
+        symbol="sh" + code,
         start_date='20240101',
         end_date='20251231',
         adjust='qfq'
@@ -127,11 +127,9 @@ def main(code):
     df = df.rename(columns={'trade_date': 'date'})
     df = df.sort_values('date').reset_index(drop=True)
 
-    # 2. 【新增】计算未来 N 日涨幅
+    # 2. 计算未来 N 日涨幅 (保持不变)
     for days in LOOKUP_DAYS:
-        # 获取未来 N 日的收盘价
         future_close = df['close'].shift(-days)
-        # 计算百分比涨幅：((未来价 / 当前价) - 1) * 100
         df[f'Gain_{days}D'] = ((future_close / df['close']) - 1) * 100
 
     # 3. 计算 StochRSI 信号、EMA 和 ATR (保持不变)
@@ -148,28 +146,34 @@ def main(code):
     tp_mult = ATR_SETTING["take_profit_multiplier"]
 
     df['ATR'] = calculate_atr(df, length=atr_length)
-    df['Stop_Loss_Price'] = df['close'] - (sl_mult * df['ATR'])
+
+    # 4. 【关键修改】ATR 止损价替换成 Pine Script 多头追踪止损的逻辑
+    # Pine Script: x2 = low - M * ATR
+    df['Stop_Loss_Price'] = df['low'] - (sl_mult * df['ATR']) # 🚨 使用 'low' 作为锚点
+
+    # 5. 止盈价 (保持原有的基于收盘价的逻辑)
     df['Take_Profit_Price'] = df['close'] + (tp_mult * df['ATR'])
 
-    print("\n=== StochRSI 买入信号、EMA 过滤与短期表现评估结果 ===")
 
-    # 4. 定义趋势过滤条件: close > EMA50 > EMA200
+    print("\n=== StochRSI 买入信号、EMA 过滤与短期表现评估结果 (ATR 追踪止损风格) ===")
+
+    # 6. 定义趋势过滤条件: close > EMA50 > EMA200
     trend_filter = (df['close'] > df['EMA50']) & \
                    (df['EMA50'] > df['EMA200'])
 
-    # 5. 应用所有过滤条件
+    # 7. 应用所有过滤条件
     filtered_signals = df[
-        (df['stoch_rsi_signal'] != '') &  # 必须有 StochRSI 买入信号
-        (trend_filter)  # 必须满足上涨趋势条件
-        ].copy()  # 解决 SettingWithCopyWarning
+        (df['stoch_rsi_signal'] != '') &
+        (trend_filter)
+        ].copy()
 
-    # 6. 格式化并打印结果
+    # 8. 格式化并打印结果
     if filtered_signals.empty:
         print("在指定日期范围内未找到符合 (StochRSI BUY AND C > E50 > E200) 策略的信号。")
     else:
-        # --- 🆕 定义所有输出列 ---
+        # --- 定义所有输出列 ---
         base_cols = [
-            'date', 'close', 'stoch_k', 'stoch_d', 'EMA50', 'EMA200',
+            'date', 'close', 'low', 'stoch_k', 'stoch_d', 'EMA50', 'EMA200', # 🆕 新增 low
             'ATR', 'Stop_Loss_Price', 'Take_Profit_Price', 'stoch_rsi_signal'
         ]
 
@@ -178,7 +182,7 @@ def main(code):
         result_cols = base_cols + gain_cols
 
         # 应用四舍五入 (针对指标和价格)
-        for col in ['close', 'stoch_k', 'stoch_d', 'EMA50', 'EMA200', 'Stop_Loss_Price', 'Take_Profit_Price']:
+        for col in ['close', 'low', 'stoch_k', 'stoch_d', 'EMA50', 'EMA200', 'Stop_Loss_Price', 'Take_Profit_Price']:
             filtered_signals[col] = filtered_signals[col].round(2)
         filtered_signals['ATR'] = filtered_signals['ATR'].round(3)
 
@@ -186,11 +190,9 @@ def main(code):
         for col in gain_cols:
             filtered_signals[col] = filtered_signals[col].round(2)
 
-        print("--- 满足 StochRSI 金叉 & C > E50 > E200 趋势过滤的买入信号 (含短期表现) ---")
-        # 🚨 使用 .loc 避免再次触发 SettingWithCopyWarning
+        print("--- 满足 StochRSI 金叉 & 趋势过滤的买入信号 (止损基于 Low - M*ATR) ---")
         print(filtered_signals.loc[:, result_cols])
 
 
 if __name__ == "__main__":
-    # 运行代码时，记得将您的股票代码 002946 传入 main 函数
-    main("002946")
+    main("000007")
