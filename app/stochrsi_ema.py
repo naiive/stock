@@ -54,9 +54,9 @@ CONFIG = {
 
     # --- 🆕 ATR 止盈止损参数 ---
     "ATR_SETTING": {
-        "lengthATR": 14,  # ATR 计算周期
-        "stop_loss_multiplier": 3.0,  # 止损倍数 (例如：3 * ATR)
-        "take_profit_multiplier": 6.0  # 止盈倍数 (例如：6 * ATR)
+        "lengthATR": 7,
+        "stop_loss_multiplier": 1.5,  # 止损倍数 M
+        "take_profit_multiplier": 1.2  # 止盈倍数
     },
 
     # --- 🆕 文件路径/名称 (保持不变) ---
