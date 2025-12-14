@@ -184,8 +184,8 @@ CONFIG = {
     "USE_LOCAL_MYSQL": True,
     "USE_REAL_TIME_DATA": False,
     "SAMPLE_SIZE": 0,
-    "BATCH_SIZE": 500,
-    "BATCH_INTERVAL_SEC": 2,
+    "BATCH_SIZE": 1000,
+    "BATCH_INTERVAL_SEC": 1,
 
     # --- 🆕 手动输入 (保持不变) ---
     "MANUAL_STOCK_LIST": []
