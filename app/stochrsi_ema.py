@@ -558,7 +558,7 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
             "ATR": round(float(current_atr), 3),
             "止损价": round(stop_loss_price, 2),
             "止盈价": round(take_profit_price, 2),
-            "趋势过滤": "满足 (C>E50>E200 & ADX>M & DI+>DI-)",
+            "趋势过滤": "满足 (Price>E50>E200 & ADX>20 & DI+>DI-)",
         }
 
     except ThreadingTimeoutError:
@@ -696,7 +696,7 @@ def main():
                 "代码",
                 "名称",
                 # "信号",
-                # "趋势过滤",
+                "趋势过滤",
                 "当前价",
                 "涨幅%",
                 # "StochK",
