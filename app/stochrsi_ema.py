@@ -188,7 +188,7 @@ CONFIG = {
     "BATCH_INTERVAL_SEC": 2,
 
     # --- 🆕 手动输入 (保持不变) ---
-    "MANUAL_STOCK_LIST": ["000007"]
+    "MANUAL_STOCK_LIST": []
 }
 
 
