@@ -213,38 +213,43 @@ def calculate_atr(df, length=14):
 def calculate_adx_values(df, length=14):
     """
     计算 ADX, +DI (PDI) 和 -DI (MDI)，使用 RMA 平滑。
-    (保持不变)
+    **【ADX 计算优化】**：将 numpy.where 替换为 Pandas where，逻辑保持不变。
     """
     df_temp = df.copy()
     high = df_temp['high']
     low = df_temp['low']
 
-    # Directional Movement (+DM 和 -DM)
+    # 1. Directional Movement (+DM 和 -DM)
     up = high - high.shift(1)
     down = low.shift(1) - low
 
-    pdm = np.where((up > down) & (up > 0), up, 0)
-    mdm = np.where((down > up) & (down > 0), down, 0)
+    # 过滤出 +DM 和 -DM
+    pdm = up.where((up > down) & (up > 0), 0)
+    mdm = down.where((down > up) & (down > 0), 0)
 
-    # 辅助计算 TR
-    df['TR_Temp'] = pd.concat([high - low, (high - df['close'].shift(1)).abs(), (low - df['close'].shift(1)).abs()],
-                              axis=1).max(axis=1)
+    # 2. True Range (TR)
+    tr1 = high - low
+    tr2 = (high - df_temp['close'].shift(1)).abs()
+    tr3 = (low - df_temp['close'].shift(1)).abs()
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    # 平滑
-    atr_smooth = pine_rma(df['TR_Temp'], length)
-    pdm_smooth = pine_rma(pd.Series(pdm, index=df.index), length)
-    mdm_smooth = pine_rma(pd.Series(mdm, index=df.index), length)
+    # 3. 平滑 (RMA)
+    atr_smooth = pine_rma(true_range, length)
+    pdm_smooth = pine_rma(pdm, length)
+    mdm_smooth = pine_rma(mdm, length)
 
-    # DI
+    # 4. DI
     pdi = (pdm_smooth / atr_smooth) * 100
     mdi = (mdm_smooth / atr_smooth) * 100
 
-    # DX
+    # 5. DX
     sum_di = pdi + mdi
+    # 使用 np.where 处理除零情况，返回 0
     dx = np.where(sum_di != 0, (pdi - mdi).abs() / sum_di * 100, 0)
+    dx_series = pd.Series(dx, index=df.index)
 
-    # ADX
-    adx = pine_rma(pd.Series(dx, index=df.index), length)
+    # 6. ADX
+    adx = pine_rma(dx_series, length)
 
     # 返回最新的 ADX, PDI, MDI 值
     return adx.iloc[-1], pdi.iloc[-1], mdi.iloc[-1]
