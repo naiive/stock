@@ -80,7 +80,7 @@ def calculate_stoch_rsi_values(series, length_rsi, length_stoch):
     return stoch_rsi_raw
 
 
-def calculate_stoch_rsi_signal(df, length_rsi=14, length_stoch=14, smooth_k=3, smooth_d=3, oversold_level=20):
+def calculate_stoch_rsi_signal(df, length_rsi=14, length_stoch=14, smooth_k=3, smooth_d=3, oversold_level=30):
     """计算 StochRSI K, D 值及超卖突破买入信号。"""
     stoch_rsi_raw = calculate_stoch_rsi_values(df['close'], length_rsi, length_stoch)
 
@@ -143,7 +143,7 @@ def main(code):
 
     # --- ADX 过滤参数配置 ---
     ADX_LENGTH = 14
-    ADX_THRESHOLD = 20.0
+    ADX_THRESHOLD = 25.0
 
     # --- 短期评估周期配置 ---
     LOOKUP_DAYS = [1, 2, 3]
@@ -243,4 +243,4 @@ def main(code):
 
 
 if __name__ == "__main__":
-    main("600588")
+    main("000546")

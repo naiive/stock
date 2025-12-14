@@ -4,13 +4,13 @@
 """
 ============================================================
 A 股突破扫描系统（StochRSI + EMA 趋势过滤 + ADX 趋势强度）
-版本：v5.3 (新增 ADX 信号列)
+版本：v5.5 (增强版：多趋势层级 + 多 StochRSI 信号 + DI 相对强度)
 
-【核心策略】
-1. StochRSI 信号: K 线上穿超卖水平 (默认 20)，且 K > D (金叉)。
-2. 趋势过滤: 当前收盘价 > EMA50 > EMA200 (强势上涨趋势)。
-3. ADX 趋势强度: ADX > N 且 +DI > -DI (趋势强劲且方向正确)。
-4. ATR 动态止损: 基于 Pine Script 风格 (Low - N * ATR)。
+【核心策略 V5.5】
+1. StochRSI 信号: K 线上穿 (20/30/40) 超卖水平，且 K > D (金叉)。
+2. 趋势过滤: 支持 Level 1 (C>E50>E200) 和 Level 2 (C>E20>E50, 启动趋势)。
+3. ADX 趋势强度: ADX > 25 且 +DI > -DI，并通过 (DI+ - DI-)/ADX 进行相对强度确认。
+4. 排除低价股: 股价低于 5.0 元的股票被排除。
 ============================================================
 """
 import os
@@ -44,38 +44,52 @@ CONFIG = {
     "EXCLUDE_ST": False,  # 排除 ST/退
     "ADJUST": "qfq",  # 复权方式
 
-    # --- 🆕 StochRSI 参数 (保持不变) ---
+    # --- 🚀 优化 1: 趋势过滤参数 (新增 E20) ---
+    "EMA_SETTING": {
+        "lengthEMA20": 20,  # 新增 E20 周期
+        "lengthEMA50": 50,
+        "lengthEMA200": 200,
+        # Level 2 趋势是否启用 (C > E20 > E50 & E50 < E200)
+        "LEVEL_2_TREND_ENABLED": True,
+    },
+
+    # --- 🚀 优化 2: StochRSI 参数 (支持多信号等级) ---
     "STOCH_RSI": {
         "lengthRSI": 14,
         "lengthStoch": 14,
         "smoothK": 3,
         "smoothD": 3,
-        "oversoldLevel": 20
+        # 信号 1 (深度回调/高可靠)：要求 K 线上穿 20
+        "oversoldLevel1": 20,
+        # 信号 2 (中度回调/中可靠)：要求 K 线上穿 30
+        "oversoldLevel2": 30,
+        "LEVEL_2_SIGNAL_ENABLED": True,  # 是否启用中度回调信号 (Level 2)
     },
 
     # --- 🆕 ATR 止盈止损参数 (短线优化参数) ---
     "ATR_SETTING": {
         "lengthATR": 7,
-        "stop_loss_multiplier": 2.0,  # 止损倍数 M (推荐 1.5-2.0 用于短线)
-        "take_profit_multiplier": 4.0  # 止盈倍数 (推荐 2倍止损)
+        "stop_loss_multiplier": 2.0,  # 止损倍数 M
+        "take_profit_multiplier": 4.0  # 止盈倍数
     },
 
-    # --- 🆕 ADX 趋势强度参数 (新增) ---
+    # --- 🚀 优化 3: ADX 趋势强度参数 (提高门槛 + DI相对强度) ---
     "ADX_SETTING": {
         "lengthADX": 14,
-        "adx_threshold": 20.0,  # 趋势强度门槛 (通常 20-25)
+        "adx_threshold": 25.0,  # 提高至 25.0
+        "di_relative_strength": 0.15,  # DI 相对强度门槛 ( (DI+ - DI-) / ADX )
     },
 
     # --- 🆕 文件路径/名称 (保持不变) ---
     "CACHE_FILE": "../conf/stock_list_cache.json",
     "EXPORT_ENCODING": "utf-8-sig",  # CSV文件导出编码
-    "OUTPUT_FILENAME_BASE": "Buy_Stocks_StochRSI_EMA_ADX_ATR",  # 输出文件前缀
+    "OUTPUT_FILENAME_BASE": "Buy_Stocks_StochRSI_EMA_ADX_ATR_V5.5",  # 输出文件前缀
     "OUTPUT_FOLDER_BASE": "../stocks",  # csv输出 文件夹
     "OUTPUT_LOG": "../logs",  # LogRedirector 日志输出文件夹
 
     # --- 🆕 并发 (保持不变) ---
-    "MAX_WORKERS": 10,  # 降低线程数到 10
-    "REQUEST_TIMEOUT": 20,  # 增加超时时间到 20s
+    "MAX_WORKERS": 10,
+    "REQUEST_TIMEOUT": 20,
 
     # --- 🆕 数据源控制 (保持不变) ---
     "USE_LOCAL_MYSQL": True,
@@ -90,7 +104,7 @@ CONFIG = {
 
 
 # ============================================================
-# 模块 A：Pine Script 核心平滑函数
+# 模块 A：Pine Script 核心平滑函数 (保持不变)
 # ============================================================
 def pine_rma(series, length):
     """ RMA (Wilder's Smoothing) - 用于精确 RSI/ATR/ADX 计算 """
@@ -108,7 +122,7 @@ def pine_sma(series, length):
 
 
 def pine_ema(series, length):
-    """ EMA (Exponential Moving Average) - 用于精确 EMA 50/200 趋势过滤 """
+    """ EMA (Exponential Moving Average) - 用于精确 EMA 20/50/200 趋势过滤 """
     if not isinstance(series, pd.Series):
         series = pd.Series(series)
     alpha = 2 / (length + 1)
@@ -116,10 +130,10 @@ def pine_ema(series, length):
 
 
 # ============================================================
-# 模块 B：StochRSI 核心计算 & ATR & ADX 计算
+# 模块 B：StochRSI 核心计算 & ATR & ADX 计算 (适应多信号)
 # ============================================================
 def calculate_stoch_rsi_values(series, length_rsi, length_stoch):
-    """计算 StochRSI 的原始 K 值"""
+    """计算 StochRSI 的原始 K 值 (保持不变)"""
     if not isinstance(series, pd.Series):
         series = pd.Series(series)
 
@@ -146,20 +160,36 @@ def calculate_stoch_rsi_values(series, length_rsi, length_stoch):
     return stoch_rsi_raw
 
 
-def calculate_stoch_rsi_signal_and_values(df, length_rsi=14, length_stoch=14, smooth_k=3, smooth_d=3,
-                                          oversold_level=20):
-    """计算 StochRSI K, D 值及超卖突破买入信号。"""
-    stoch_rsi_raw = calculate_stoch_rsi_values(df['close'], length_rsi, length_stoch)
-
-    k = pine_sma(stoch_rsi_raw, smooth_k)
-    d = pine_sma(k, smooth_d)
-
+def check_stoch_rsi_signal(k, d, oversold_level):
+    """检查单个超卖水平的 StochRSI 信号"""
     k_crossover_level = (k.shift(1) <= oversold_level) & (k > oversold_level)
     k_gt_d = (k > d)
-    buy_signal_raw = k_crossover_level & k_gt_d
+    return k_crossover_level.iloc[-1] & k_gt_d.iloc[-1]
 
-    # 返回最新的 K, D 值和信号
-    return k.iloc[-1], d.iloc[-1], buy_signal_raw.iloc[-1]
+
+def calculate_stoch_rsi_signal_and_values(df, config):
+    """计算 StochRSI K, D 值及多层级买入信号。"""
+    stoch_rsi_raw = calculate_stoch_rsi_values(df['close'], config["lengthRSI"], config["lengthStoch"])
+
+    k = pine_sma(stoch_rsi_raw, config["smoothK"])
+    d = pine_sma(k, config["smoothD"])
+
+    k_val = k.iloc[-1]
+    d_val = d.iloc[-1]
+
+    # 信号 1: 深度回调 (K 线上穿 20 且金叉)
+    signal_level1 = check_stoch_rsi_signal(k, d, config["oversoldLevel1"])
+
+    # 信号 2: 中度回调 (K 线上穿 30 且金叉)
+    signal_level2 = False
+    if config["LEVEL_2_SIGNAL_ENABLED"]:
+        signal_level2 = check_stoch_rsi_signal(k, d, config["oversoldLevel2"])
+        # 排除 Level 1 信号，避免重复计数 (若 Level 1 满足，则 Level 2 自动不算)
+        if signal_level1:
+            signal_level2 = False
+
+    # 返回 K, D 值，以及两个信号等级
+    return k_val, d_val, signal_level1, signal_level2
 
 
 def calculate_atr(df, length=14):
@@ -180,10 +210,10 @@ def calculate_atr(df, length=14):
     return atr_series.iloc[-1]
 
 
-# ADX 计算函数
 def calculate_adx_values(df, length=14):
     """
     计算 ADX, +DI (PDI) 和 -DI (MDI)，使用 RMA 平滑。
+    (保持不变)
     """
     df_temp = df.copy()
     high = df_temp['high']
@@ -222,9 +252,8 @@ def calculate_adx_values(df, length=14):
 
 # ============================================================
 # 模块 2 - 7 (LogRedirector, 交易日历, 重试装饰器, 股票列表, 实时数据)
+# (保持不变)
 # ============================================================
-# --- 由于代码限制，保留核心依赖模块以便代码运行，其他省略部分假设存在且功能正确 ---
-# (LogRedirector, is_trade_day, load_trade_calendar, retry, fetch_stock_list_safe, get_stock_list_manager, filter_stock_list, fetch_realtime_snapshot, append_today_realtime_snapshot, fetch_data_with_timeout 保持不变)
 
 class LogRedirector:
     MAX_BYTES = 20 * 1024 * 1024
@@ -466,7 +495,7 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
 
 
 # ============================================================
-# 模块 8：单只股票策略 (新增 ADX 信号列)
+# 模块 8：单只股票策略 (V5.5 核心逻辑)
 # ============================================================
 def strategy_single_stock(code, start_date, end_date, df_spot):
     symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
@@ -475,51 +504,79 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         df = fetch_data_with_timeout(symbol=symbol, start_date=start_date, end_date=end_date, adjust=CONFIG["ADJUST"],
                                      timeout=CONFIG["REQUEST_TIMEOUT"])
 
-        # 确保数据长度足够计算 EMA200/ATR/ADX (ADX/EMA200 需要大量数据)
-        if df is None or df.empty or len(df) < 220: return None
+        # 检查数据长度
+        if df is None or df.empty or len(df) < CONFIG["EMA_SETTING"]["lengthEMA200"] + 20: return None  # 预留空间
 
-        # 调用实时股票行情拼接接口
+        # 实时数据拼接
         if CONFIG["USE_REAL_TIME_DATA"]:
             df = append_today_realtime_snapshot(code, df, df_spot)
 
-        # 确保数据长度在拼接后仍足够
-        if len(df) < 220: return None
+        if len(df) < CONFIG["EMA_SETTING"]["lengthEMA200"]: return None
 
         df['date'] = pd.to_datetime(df['date']).dt.date
         df = df.sort_values('date').reset_index(drop=True)
         current_close = df['close'].iloc[-1]
-        current_low = df['low'].iloc[-1]  # 用于 Pine Script 风格止损
+        current_low = df['low'].iloc[-1]
+
+        # --- 价格过滤 (低于 5.0 元直接排除) ---
+        if current_close < 5.0: return None
 
         # --- 策略核心计算 ---
 
-        # 1. StochRSI 信号
-        k_val, d_val, stoch_rsi_buy_signal = calculate_stoch_rsi_signal_and_values(
-            df,
-            length_rsi=CONFIG["STOCH_RSI"]["lengthRSI"],
-            length_stoch=CONFIG["STOCH_RSI"]["lengthStoch"],
-            smooth_k=CONFIG["STOCH_RSI"]["smoothK"],
-            smooth_d=CONFIG["STOCH_RSI"]["smoothD"],
-            oversold_level=CONFIG["STOCH_RSI"]["oversoldLevel"]
-        )
-        if not stoch_rsi_buy_signal: return None
+        # 1. StochRSI 信号 (多层级)
+        stoch_config = CONFIG["STOCH_RSI"]
+        k_val, d_val, sig_level1, sig_level2 = calculate_stoch_rsi_signal_and_values(df, stoch_config)
 
-        # 2. EMA 趋势过滤
-        ema50 = pine_ema(df['close'], 50).iloc[-1]
-        ema200 = pine_ema(df['close'], 200).iloc[-1]
-        trend_filter = (current_close > ema50) and (ema50 > ema200)
-        if not trend_filter: return None
+        # 必须至少满足一个 StochRSI 信号
+        if not (sig_level1 or sig_level2): return None
 
-        # 3. 🆕 ADX 趋势强度过滤
-        adx_len = CONFIG["ADX_SETTING"]["lengthADX"]
-        adx_thresh = CONFIG["ADX_SETTING"]["adx_threshold"]
+        # 2. EMA 趋势过滤 (多层级)
+        ema_config = CONFIG["EMA_SETTING"]
+        ema20 = pine_ema(df['close'], ema_config["lengthEMA20"]).iloc[-1]
+        ema50 = pine_ema(df['close'], ema_config["lengthEMA50"]).iloc[-1]
+        ema200 = pine_ema(df['close'], ema_config["lengthEMA200"]).iloc[-1]
 
-        adx_val, pdi_val, mdi_val = calculate_adx_values(df, length=adx_len)
+        # 强势趋势 (Level 1): C > E50 > E200
+        trend_level1 = (current_close > ema50) and (ema50 > ema200)
 
-        # 趋势强度 (ADX > 门槛) 且 方向正确 (+DI > -DI)
-        adx_filter = (adx_val > adx_thresh) and (pdi_val > mdi_val)
+        # 启动趋势 (Level 2): C > E20 > E50, E50 < E200
+        trend_level2 = False
+        if ema_config["LEVEL_2_TREND_ENABLED"]:
+            trend_level2 = (current_close > ema20) and (ema20 > ema50) and (ema50 < ema200)
 
-        # 🆕 ADX 信号列赋值
-        adx_signal = 'Buy' if adx_filter else ''
+        # 必须至少满足一个趋势过滤
+        if not (trend_level1 or trend_level2): return None
+
+        # 确定最终的信号描述
+        if trend_level1 and sig_level1:
+            signal_desc = "L1/L1 (强势/深回调)"
+            trend_desc = "Level 1: C>E50>E200"
+        elif trend_level1 and sig_level2:
+            signal_desc = "L1/L2 (强势/浅回调)"
+            trend_desc = "Level 1: C>E50>E200"
+        elif trend_level2 and (sig_level1 or sig_level2):
+            signal_desc = "L2/L(1/2) (启动/回调)"
+            trend_desc = "Level 2: C>E20>E50"
+        else:
+            # 理论上不会发生，但作为保底
+            return None
+
+        # 3. ADX 趋势强度过滤 (ADX > 25.0 且 DI 相对强度)
+        adx_config = CONFIG["ADX_SETTING"]
+        adx_val, pdi_val, mdi_val = calculate_adx_values(df, length=adx_config["lengthADX"])
+
+        # ADX 趋势强度 (ADX > 门槛) 且 方向正确 (+DI > -DI)
+        adx_direction_filter = (adx_val > adx_config["adx_threshold"]) and (pdi_val > mdi_val)
+
+        # DI 相对强度 (DI+ - DI-) / ADX > 0.15
+        sum_di = pdi_val + mdi_val
+        di_relative_strength = (pdi_val - mdi_val) / adx_val if adx_val != 0 else 0
+        adx_relative_filter = (adx_val > 15) and (di_relative_strength >= adx_config["di_relative_strength"])
+
+        # ADX 最终过滤：同时满足 ADX 门槛和 DI 相对强度（或 ADX 信号极强）
+        adx_filter = adx_direction_filter and adx_relative_filter
+
+        adx_signal = 'Buy' if adx_filter else '待确认'  # 新增待确认状态
 
         if not adx_filter: return None
 
@@ -530,10 +587,6 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
 
         current_atr = calculate_atr(df, length=atr_length)
 
-        if current_close < 5.0 and current_close > 0:
-            current_atr = 0  # 价格过低，风险无法准确衡量，暂时跳过 ATR 计算
-
-        # Pine Script 风格止损: Stop_Loss = Low - M * ATR
         stop_loss_price = current_low - (sl_mult * current_atr)
         take_profit_price = current_close + (tp_mult * current_atr)
 
@@ -544,21 +597,23 @@ def strategy_single_stock(code, start_date, end_date, df_spot):
         return {
             "代码": code,
             "日期": df['date'].iloc[-1].strftime('%Y-%m-%d'),
-            "信号": 'StochRSI/EMA/ADX Buy',
+            "信号等级": signal_desc,  # 🆕 信号等级
             "当前价": round(current_close, 2),
             "涨幅%": round(pct_chg, 2),
             "StochK": round(float(k_val), 2),
             "StochD": round(float(d_val), 2),
+            "EMA20": round(float(ema20), 2),  # 🆕 EMA20
             "EMA50": round(float(ema50), 2),
             "EMA200": round(float(ema200), 2),
             "ADX": round(float(adx_val), 2),
             "DI+": round(float(pdi_val), 2),
             "DI-": round(float(mdi_val), 2),
-            "ADX信号": adx_signal,  # 🆕 新增 ADX 信号
+            "DI相对强": round(float(di_relative_strength), 2),  # 🆕 DI 相对强度
+            "ADX信号": adx_signal,
             "ATR": round(float(current_atr), 3),
             "止损价": round(stop_loss_price, 2),
             "止盈价": round(take_profit_price, 2),
-            "趋势过滤": "满足 (Price>E50>E200 & ADX>20 & DI+>DI-)",
+            "趋势过滤": trend_desc,  # 🆕 趋势描述
         }
 
     except ThreadingTimeoutError:
@@ -626,7 +681,11 @@ def main():
         print(f"\n[任务启动] 扫描范围: {start_date} ~ {end_date}")
         print(f"[配置] 目标线程: {CONFIG['MAX_WORKERS']} | 超时: {CONFIG['REQUEST_TIMEOUT']}s")
         print(
-            f"[配置] ADX过滤: 周期={CONFIG['ADX_SETTING']['lengthADX']}, 门槛={CONFIG['ADX_SETTING']['adx_threshold']}")
+            f"[配置] 趋势过滤: L1 (C>E50>E200), L2 (C>E20>E50) 启用={CONFIG['EMA_SETTING']['LEVEL_2_TREND_ENABLED']}")
+        print(
+            f"[配置] StochRSI: L1 (K>20), L2 (K>30) 启用={CONFIG['STOCH_RSI']['LEVEL_2_SIGNAL_ENABLED']}")
+        print(
+            f"[配置] ADX过滤: 门槛={CONFIG['ADX_SETTING']['adx_threshold']}, DI相对强度={CONFIG['ADX_SETTING']['di_relative_strength']}")
 
         df_spot = pd.DataFrame()
         if CONFIG["USE_REAL_TIME_DATA"]:
@@ -690,26 +749,13 @@ def main():
             file_name = f"{CONFIG['OUTPUT_FILENAME_BASE']}_{timestamp}.csv"
             full_file_path = os.path.join(folder_path, file_name)
 
-            # 🆕 重新排序结果列 (新增 ATR, ADX, DI+, DI- 止损价, 止盈价, ADX信号)
+            # 重新排序结果列 (新增 EMA20, 信号等级, DI相对强度)
             ordered_cols = [
-                "日期",
-                "代码",
-                "名称",
-                # "信号",
-                "趋势过滤",
-                "当前价",
-                "涨幅%",
-                # "StochK",
-                # "StochD",
-                # "EMA50",
-                # "EMA200",
-                # "ADX",
-                # "DI+",
-                # "DI-",
-                "ADX信号",  # 🆕 新增 ADX信号
-                # "ATR",
-                "止损价",
-                # "止盈价"
+                "日期", "代码", "名称", "信号等级", "趋势过滤",
+                "当前价", "涨幅%",
+                "StochK", "StochD", "EMA20", "EMA50", "EMA200",
+                "ADX", "DI+", "DI-", "DI相对强", "ADX信号",
+                "ATR", "止损价", "止盈价",
             ]
 
             # 确保只包含实际存在的列
