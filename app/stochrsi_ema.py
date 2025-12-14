@@ -27,15 +27,59 @@ import akshare as ak
 import asyncio
 from tqdm import tqdm
 
-# --- 导入交易数据接口 (保持不变) ---
-try:
-    from api.stock_query import stock_zh_a_daily_mysql
-except ImportError:
-    print("[警告] 无法导入 stock_zh_a_daily_mysql。请确保您的 stock_query.py 文件存在。")
+from api.stock_query import stock_zh_a_daily_mysql
 
+# ============================================================
+# 模块 1：配置 (Configuration) (增加 ATR 参数)
+# ============================================================
+CONFIG = {
+    # --- 🆕 时间范围 ---
+    "DAYS": 365,  # 扫描回溯天数 (用于计算 MA200/EMA200)
 
-    def stock_zh_a_daily_mysql(*args, **kwargs):
-        raise NameError("stock_zh_a_daily_mysql 尚未定义或导入失败。")
+    # --- 🆕 过滤条件 (保持不变) ---
+    "EXCLUDE_GEM": True,  # 排除创业板（300、301）
+    "EXCLUDE_KCB": True,  # 排除科创板（688、689）
+    "EXCLUDE_BJ": True,  # 排除北交所（8、4、92）
+    "EXCLUDE_ST": False,  # 排除 ST/退
+    "ADJUST": "qfq",  # 复权方式
+
+    # --- 🆕 StochRSI 参数 (保持不变) ---
+    "STOCH_RSI": {
+        "lengthRSI": 14,
+        "lengthStoch": 14,
+        "smoothK": 3,
+        "smoothD": 3,
+        "oversoldLevel": 20
+    },
+
+    # --- 🆕 ATR 止盈止损参数 ---
+    "ATR_SETTING": {
+        "lengthATR": 14,  # ATR 计算周期
+        "stop_loss_multiplier": 3.0,  # 止损倍数 (例如：3 * ATR)
+        "take_profit_multiplier": 6.0  # 止盈倍数 (例如：6 * ATR)
+    },
+
+    # --- 🆕 文件路径/名称 (保持不变) ---
+    "CACHE_FILE": "../conf/stock_list_cache.json",
+    "EXPORT_ENCODING": "utf-8-sig",  # CSV文件导出编码
+    "OUTPUT_FILENAME_BASE": "Buy_Stocks_StochRSI_EMA_ATR",  # 输出文件前缀
+    "OUTPUT_FOLDER_BASE": "../stocks",  # csv输出 文件夹
+    "OUTPUT_LOG": "../logs",  # LogRedirector 日志输出文件夹
+
+    # --- 🆕 并发 (保持不变) ---
+    "MAX_WORKERS": 10,  # 降低线程数到 10
+    "REQUEST_TIMEOUT": 20,  # 增加超时时间到 20s
+
+    # --- 🆕 数据源控制 (保持不变) ---
+    "USE_LOCAL_MYSQL": True,
+    "USE_REAL_TIME_DATA": False,
+    "SAMPLE_SIZE": 0,
+    "BATCH_SIZE": 1000,
+    "BATCH_INTERVAL_SEC": 1,
+
+    # --- 🆕 手动输入 (保持不变) ---
+    "MANUAL_STOCK_LIST": []
+}
 
 
 # ============================================================
@@ -137,59 +181,6 @@ def calculate_atr(df, length=14):
     atr_series = pine_rma(true_range, length)
 
     return atr_series.iloc[-1]
-
-
-# ============================================================
-# 模块 1：配置 (Configuration) (增加 ATR 参数)
-# ============================================================
-CONFIG = {
-    # --- 🆕 时间范围 ---
-    "DAYS": 365,  # 扫描回溯天数 (用于计算 MA200/EMA200)
-
-    # --- 🆕 过滤条件 (保持不变) ---
-    "EXCLUDE_GEM": True,  # 排除创业板（300、301）
-    "EXCLUDE_KCB": True,  # 排除科创板（688、689）
-    "EXCLUDE_BJ": True,  # 排除北交所（8、4、92）
-    "EXCLUDE_ST": False,  # 排除 ST/退
-    "ADJUST": "qfq",  # 复权方式
-
-    # --- 🆕 StochRSI 参数 (保持不变) ---
-    "STOCH_RSI": {
-        "lengthRSI": 14,
-        "lengthStoch": 14,
-        "smoothK": 3,
-        "smoothD": 3,
-        "oversoldLevel": 20
-    },
-
-    # --- 🆕 ATR 止盈止损参数 ---
-    "ATR_SETTING": {
-        "lengthATR": 14,  # ATR 计算周期
-        "stop_loss_multiplier": 3.0,  # 止损倍数 (例如：3 * ATR)
-        "take_profit_multiplier": 6.0  # 止盈倍数 (例如：6 * ATR)
-    },
-
-    # --- 🆕 文件路径/名称 (保持不变) ---
-    "CACHE_FILE": "../conf/stock_list_cache.json",
-    "EXPORT_ENCODING": "utf-8-sig",  # CSV文件导出编码
-    "OUTPUT_FILENAME_BASE": "Buy_Stocks_StochRSI_EMA_ATR",  # 输出文件前缀
-    "OUTPUT_FOLDER_BASE": "../stocks",  # csv输出 文件夹
-    "OUTPUT_LOG": "../logs",  # LogRedirector 日志输出文件夹
-
-    # --- 🆕 并发 (保持不变) ---
-    "MAX_WORKERS": 10,  # 降低线程数到 10
-    "REQUEST_TIMEOUT": 20,  # 增加超时时间到 20s
-
-    # --- 🆕 数据源控制 (保持不变) ---
-    "USE_LOCAL_MYSQL": True,
-    "USE_REAL_TIME_DATA": False,
-    "SAMPLE_SIZE": 0,
-    "BATCH_SIZE": 1000,
-    "BATCH_INTERVAL_SEC": 1,
-
-    # --- 🆕 手动输入 (保持不变) ---
-    "MANUAL_STOCK_LIST": []
-}
 
 
 # ============================================================
