@@ -3,6 +3,9 @@
 
 """
 ============================================================
+辅助作用，不能完全参考
+
+
 A 股突破扫描系统（StochRSI + EMA 趋势过滤 + ADX 趋势强度）
 版本：v5.5 (增强版：多趋势层级 + 多 StochRSI 信号 + DI 相对强度)
 
@@ -93,7 +96,7 @@ CONFIG = {
 
     # --- 🆕 数据源控制 (保持不变) ---
     "USE_LOCAL_MYSQL": True,
-    "USE_REAL_TIME_DATA": False,
+    "USE_REAL_TIME_DATA": True,
     "SAMPLE_SIZE": 0,
     "BATCH_SIZE": 1000,
     "BATCH_INTERVAL_SEC": 1,
