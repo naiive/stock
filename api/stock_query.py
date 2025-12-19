@@ -84,6 +84,7 @@ def stock_zh_a_daily_mysql(
     # 2. 构造 SQL 查询语句
     sql = f"""
     SELECT 
+        code,
         date, 
         open, 
         high, 
@@ -113,7 +114,7 @@ def stock_zh_a_daily_mysql(
 
         # 4. 格式化输出
         df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
-        df.columns = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount']
+        df.columns = ['code', 'date', 'open', 'high', 'low', 'close', 'volume', 'amount']
 
         return df
 
