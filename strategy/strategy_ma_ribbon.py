@@ -52,4 +52,4 @@ if __name__ == "__main__":
         symbol='600628',
         start_date='20240101',
         end_date='20251219',
-        adjust='qfq'),200).tail(10))
+        adjust='qfq')).tail(10))

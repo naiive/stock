@@ -152,12 +152,4 @@ if __name__ == "__main__":
         symbol="600628",
         start_date="20240101",
         end_date="20251219",
-        adjust="qfq",
-    ),
-        length=14,
-        multiplier=1.5,
-        smoothing="RMA",
-    ).tail(10))
-
-
-
+        adjust="qfq" )).tail(10))
