@@ -67,7 +67,7 @@ def stock_zh_a_daily_mysql(
     """
     从 MySQL 数据库查询 A 股历史数据。
 
-    :param symbol: 股票代码，格式为 'sh600000' 或 'sz000001'。
+    :param symbol: 股票代码，格式为 '600000' 或 '000001'。
     :param start_date: 起始日期，格式 'YYYYMMDD'。
     :param end_date: 结束日期，格式 'YYYYMMDD'。
     :param adjust: 复权类型，'qfq' (前复权) 或 'hfq' (后复权)。
@@ -75,7 +75,6 @@ def stock_zh_a_daily_mysql(
     """
 
     # 1. 参数处理
-    code = symbol[2:]
     adjust_type = adjust if adjust in ['qfq', 'hfq'] else ''
 
     if not end_date:
@@ -94,7 +93,7 @@ def stock_zh_a_daily_mysql(
         amount 
     FROM {TABLE_NAME}
     WHERE 
-        code = '{code}' AND 
+        code = '{symbol}' AND 
         adjust = '{adjust_type}' AND 
         date BETWEEN '{start_date}' AND '{end_date}'
     ORDER BY date ASC;
@@ -132,22 +131,22 @@ if __name__ == '__main__':
 
     # 第一次查询：Engine 被创建
     df_first = stock_zh_a_daily_mysql(
-        symbol='sh000001',
+        symbol='000001',
         start_date='20250101',
         end_date='20250131',
         adjust='qfq'
     )
-    print("\n--- 首次查询数据 (sh000001) ---")
+    print("\n--- 首次查询数据 (000001) ---")
     print(df_first.tail())
 
     print("\n--- 正在执行第二次查询（复用已创建的 Engine 和连接池）---")
 
     # 第二次查询：复用已有的 Engine，从连接池中获取连接
     df_second = stock_zh_a_daily_mysql(
-        symbol='sh000001',
+        symbol='000001',
         start_date='20250101',
         end_date='20250131',
-        adjust='hfq'
+        adjust='qfq'
     )
-    print("\n--- 第二次查询数据 (sh000001) ---")
+    print("\n--- 第二次查询数据 (000001) ---")
     print(df_second.head())
