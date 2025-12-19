@@ -11,7 +11,7 @@
 import pandas as pd
 from conf.config import INDICATOR_CONFIG
 
-def ma_ribbon(
+def ma_ribbon_indicator(
     df: pd.DataFrame,
     length: int = 200
 ) -> pd.DataFrame:
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     from api.stock_query import stock_zh_a_daily_mysql
 
-    print(ma_ribbon(stock_zh_a_daily_mysql(
+    print(ma_ribbon_indicator(stock_zh_a_daily_mysql(
         symbol='600628',
         start_date='20240101',
         end_date='20251219',

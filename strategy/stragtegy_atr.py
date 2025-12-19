@@ -89,7 +89,7 @@ def ma_smoothing(series: pd.Series, length: int, method: str) -> pd.Series:
 
     raise ValueError(f"Unknown smoothing method: {method}")
 
-def atr_stop_loss(
+def atr_indicator(
     df: pd.DataFrame,
     length: int = 14,
     multiplier: float = 1.5,
@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
     from api.stock_query import stock_zh_a_daily_mysql
 
-    print(atr_stop_loss(stock_zh_a_daily_mysql(
+    print(atr_indicator(stock_zh_a_daily_mysql(
         symbol="600628",
         start_date="20240101",
         end_date="20251219",
