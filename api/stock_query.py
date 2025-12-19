@@ -14,7 +14,7 @@ import conf.config as conf
 # 1. 配置信息
 # =========================================================
 DB_CONFIG = conf.DB_CONFIG
-TABLE_NAME = conf.MYSQL_TABLE
+TABLE_NAME = conf.TABLE_CONFIG["query_daily_table"]
 
 # **全局变量：存储唯一的 Engine 实例**
 # 使用单例模式的关键：确保 Engine 只被创建一次
