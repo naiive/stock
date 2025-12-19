@@ -81,7 +81,7 @@ CONFIG = {
     # MySQL
     "DB": conf.DB_CONFIG,
 
-    "MYSQL_TABLE": conf.MYSQL_TABLE,
+    "MYSQL_TABLE": conf.TABLE_CONFIG["insert_daily_table"],
 
     # !!! 数据库要求：目标表 a_stock_daily 必须设置 (date, code, adjust) 为联合主键。
 
