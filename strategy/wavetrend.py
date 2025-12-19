@@ -117,7 +117,7 @@ def main():
     # 1. 读取日线数据
     # --------------------------------------------------------
     df = stock_zh_a_daily_mysql(
-        symbol='sh600588',
+        symbol='600588',
         start_date='20240101',
         end_date='20251231',
         adjust='qfq'
