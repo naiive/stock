@@ -49,6 +49,7 @@ def  wavetrend_with_crosses_indicator(
     averageLength = INDICATOR_CONFIG.get("WTC", {}).get("averageLength", averageLength)
     smaLength = INDICATOR_CONFIG.get("WTC", {}).get("smaLength", smaLength)
 
+    # 上下超买、卖水平线1和2
     obLevel1 = INDICATOR_CONFIG.get("WTC", {}).get("obLevel1", obLevel1)
     obLevel2 = INDICATOR_CONFIG.get("WTC", {}).get("obLevel2", obLevel2)
     osLevel1 = INDICATOR_CONFIG.get("WTC", {}).get("osLevel1", osLevel1)
