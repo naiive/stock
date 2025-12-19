@@ -3,7 +3,7 @@
 
 """
 ============================================================
-A 股突破扫描系统（Pivot + SQZMOM + MA200）
+A 股突破扫描系统（Breaks + SQZMOM + EMA200）
 版本：v1.5 (交易日判断 + 实时数据追加修正版)
 
 【核心修改】
@@ -61,13 +61,8 @@ import asyncio
 from tqdm import tqdm
 
 from api.tradingview_api_client import get_tech_indicators_robust
+from api.stock_query import stock_zh_a_daily_mysql
 
-try:
-    from api.stock_query import stock_zh_a_daily_mysql
-except ImportError:
-    print("[警告] 无法导入 stock_zh_a_daily_mysql。请确保您的 stock_query.py 文件存在。")
-    def stock_zh_a_daily_mysql(*args, **kwargs):
-        raise NameError("stock_zh_a_daily_mysql 尚未定义或导入失败。")
 
 # ============================================================
 # 模块 1：配置 (Configuration)
