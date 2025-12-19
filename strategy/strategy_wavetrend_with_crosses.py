@@ -26,7 +26,7 @@ def  wavetrend_with_crosses_indicator(
     WaveTrend (LazyBear) 指标计算
 
     返回：
-    code        date     open     high      low    close      volume        amount   wtc_green     wtc_red      wt_diff wtc_signal
+    code        date     open     high      low    close      volume        amount   wtc_green     wtc_red    wtc_value wtc_signal
     600519  2025-01-02  1494.71  1495.19  1451.55  1459.40   5002870.0  7.490884e+09         NaN         NaN        NaN         no
     600519  2025-01-03  1465.77  1466.25  1438.81  1446.65   3262836.0  4.836610e+09 -366.666667         NaN        NaN         no
     600519  2025-01-06  1425.07  1434.54  1405.26  1412.32   4425512.0  6.392480e+09 -358.798141         NaN        NaN         no
@@ -76,8 +76,8 @@ def  wavetrend_with_crosses_indicator(
     # ---------- wtc_red (信号线) ----------
     wtc_red = wtc_green.rolling(window=smaLength).mean()
 
-    # ---------- WT 差值（蓝色动能柱） ----------
-    wt_diff = wtc_green - wtc_red
+    # ---------- wtc 差值（蓝色动能柱） ----------
+    wtc_value = wtc_green - wtc_red
 
     # ---------- 交叉判断 ----------
     # 金叉：wtc_green 从下向上穿过 wtc_red
@@ -95,7 +95,7 @@ def  wavetrend_with_crosses_indicator(
     # ---------- 写回 DataFrame ----------
     df['wtc_green'] = wtc_green
     df['wtc_red'] = wtc_red
-    df['wt_diff'] = wt_diff
+    df['wtc_value'] = wtc_value
     df['wtc_signal'] = signal
 
     return df
