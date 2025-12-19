@@ -592,7 +592,9 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
                 print(f"\n[错误] {symbol} 尝试使用 MySQL 接口失败 (NameError)，自动降级到 AkShare。\n")
                 pass
 
-        return ak.stock_zh_a_daily(symbol=symbol, start_date=start_date, end_date=end_date, adjust=adjust)
+        c = f"sh{symbol}" if symbol.startswith("6") else f"sz{symbol}"
+
+        return ak.stock_zh_a_daily(symbol=c, start_date=start_date, end_date=end_date, adjust=adjust)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_fetch)
@@ -611,10 +613,8 @@ def fetch_data_with_timeout(symbol, start_date, end_date, adjust, timeout):
 # 模块 8：单只股票策略（整合） - 增加 "突破趋势" 和 "得分"
 # ============================================================
 def strategy_single_stock(code, start_date, end_date, df_spot):
-    symbol = f"sh{code}" if code.startswith("6") else f"sz{code}"
-
     try:
-        df = fetch_data_with_timeout(symbol=symbol, start_date=start_date, end_date=end_date, adjust=CONFIG["ADJUST"],
+        df = fetch_data_with_timeout(symbol=code, start_date=start_date, end_date=end_date, adjust=CONFIG["ADJUST"],
                                      timeout=CONFIG["REQUEST_TIMEOUT"])
 
         if df is None or df.empty or len(df) < 220: return None
