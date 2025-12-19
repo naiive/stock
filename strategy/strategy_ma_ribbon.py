@@ -30,7 +30,6 @@ def ma_ribbon_indicator(
         600628  2025-12-18  8.00  8.89  7.99   8.89   86095168.0  7.394343e+08  7.523586
         600628  2025-12-19  9.00  9.77  8.88   9.11  121830916.0  1.129386e+09  7.539371
     """
-
     length = INDICATOR_CONFIG.get("EMA", {}).get("length", length)
 
     col_name = f"ema_{length}"
@@ -38,7 +37,6 @@ def ma_ribbon_indicator(
     df[col_name] = df["close"].ewm(span=length, adjust=False).mean()
 
     return df
-
 
 if __name__ == "__main__":
     pd.set_option("display.max_rows", None)
