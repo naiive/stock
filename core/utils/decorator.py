@@ -24,3 +24,15 @@ def retry(max_retries=3, delay=2):
             raise last_exception
         return wrapper
     return decorator
+
+
+def timer(func):
+    """函数耗时统计装饰器"""
+    def wrapper(*args, **kwargs):
+        t1 = time.time()
+        result = func(*args, **kwargs)
+        t2 = time.time()
+        # 这种 print 会被你之前的 LogRedirector 自动记入日志
+        print(f"⏱️  [性能] {func.__name__} 耗时: {(t2 - t1)*1000:.2f} ms")
+        return result
+    return wrapper

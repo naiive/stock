@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import akshare as ak
 import pandas as pd
-from core.utils.retry import retry
+from core.utils.decorator import retry
 from conf.config import SYSTEM_CONFIG
 
 class APIClient:

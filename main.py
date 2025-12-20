@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
-import sys
+
 import random
+
+from core.utils.decorator import timer
 from engine.market_scanner import MarketScanner
 from core.data_manager import StockListManager
 from core.data_client.mysql_client import MySQLClient
 from core.utils.logger import LogRedirector
 from conf.config import SYSTEM_CONFIG, PATH_CONFIG
 
-
+@timer
 def main():
     # 从配置中获取日志目录，默认为 "logs"
     log_dir = PATH_CONFIG.get("OUTPUT_LOG", "logs")

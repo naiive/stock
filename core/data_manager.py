@@ -5,7 +5,7 @@ import datetime
 import pandas as pd
 import akshare as ak
 from conf.config import PATH_CONFIG, INDICATOR_CONFIG  # 导入过滤配置
-from core.utils.retry import retry
+from core.utils.decorator import retry
 
 
 class StockListManager:
