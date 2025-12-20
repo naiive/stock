@@ -3,10 +3,10 @@ import time
 import os
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm  # 导入进度条库，用于实时显示扫描进度
+from tqdm import tqdm
 from core.data_handler import DataHandler
-from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 from conf.config import SYSTEM_CONFIG, PATH_CONFIG
+from strategies.breakout_strategy import run_breakout_strategy
 
 
 class MarketScanner:
@@ -20,41 +20,10 @@ class MarketScanner:
         """
         核心工作函数：单只股票的扫描逻辑。
         由线程池调用，实现并发执行。
+        ***调用策略***
         """
-        try:
-            # 1. 获取完整数据：内部自动判断是否需要追加今日实时 K 线
-            df = self.handler.get_full_data(symbol)
-
-            # 2. 预检过滤：如果数据量太少（不足以计算长周期指标），直接跳过
-            # 提示：在此处加入 price > 5 或 MA200 过滤，可以极大地减少后面的计算量
-            if df is None or len(df) < 35:
-                return None
-
-            # 3. 计算技术指标：调用你指定的 SQZ 指标函数
-            df = squeeze_momentum_indicator(df)
-            if df.empty:
-                return None
-
-            # 4. 获取最新的两行数据，用于判断“拐点”或“突破”
-            last_row = df.iloc[-1]  # 当前时刻（可能是实时）
-            prev_row = df.iloc[-2]  # 前一交易日
-
-            # 5. 策略信号判断逻辑
-            # 示例策略：SQZ 状态从“ON(挤压)”变为“OFF(释放)”
-            if last_row['sqz_status'] == 'OFF' and prev_row['sqz_status'] == 'ON':
-                # 如果符合条件，返回结果字典
-                return {
-                    "代码": symbol,
-                    "最新价": last_row['close'],
-                    "动能值": round(last_row['sqz_hvalue'], 4),
-                    "扫描时间": time.strftime("%H:%M:%S")
-                }
-        except Exception as e:
-            # 异常捕获：确保单只股票报错不会导致整个程序崩溃
-            # 错误信息会被 LogRedirector 捕获并写入日志
-            # print(f"解析 {symbol} 出错: {e}")
-            return None
-        return None
+        df = self.handler.get_full_data(symbol)
+        return run_breakout_strategy(df, symbol)
 
     def run_full_scan(self, symbols=None):
         """
