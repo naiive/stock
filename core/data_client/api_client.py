@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 import akshare as ak
 import pandas as pd
-import numpy as np
-import datetime
 from core.utils.retry import retry
 from conf.config import SYSTEM_CONFIG
 
