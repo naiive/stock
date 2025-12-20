@@ -60,7 +60,7 @@ import akshare as ak
 import asyncio
 from tqdm import tqdm
 
-from api.stock_query import stock_zh_a_daily_mysql
+from scripts.stock_query import stock_zh_a_daily_mysql
 
 
 # ============================================================

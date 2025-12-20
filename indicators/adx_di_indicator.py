@@ -103,7 +103,7 @@ if __name__ == "__main__":
     pd.set_option("display.width", 1000)
     pd.set_option("display.max_colwidth", None)
 
-    from api.stock_query import stock_zh_a_daily_mysql
+    from scripts.stock_query import stock_zh_a_daily_mysql
 
     print(adx_di_indicator(stock_zh_a_daily_mysql(
         symbol='600519',

@@ -14,7 +14,7 @@ import conf.config as conf
 # 1. 配置信息
 # =========================================================
 DB_CONFIG = conf.DB_CONFIG
-TABLE_NAME = conf.TABLE_CONFIG["query_daily_table"]
+TABLE_NAME = conf.TABLE_CONFIG["QUERY_DAILY_TABLE"]
 
 # **全局变量：存储唯一的 Engine 实例**
 # 使用单例模式的关键：确保 Engine 只被创建一次
@@ -34,8 +34,8 @@ def get_db_engine() -> Engine:
     # 如果 Engine 尚未创建，则创建它
     if _GLOBAL_DB_ENGINE is None:
         url = (
-            f"mysql+pymysql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@"
-            f"{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}?charset=utf8mb4"
+            f"mysql+pymysql://{DB_CONFIG['USER']}:{DB_CONFIG['PASS']}@"
+            f"{DB_CONFIG['HOST']}:{DB_CONFIG['PORT']}/{DB_CONFIG['DB_NAME']}?charset=utf8mb4"
         )
 
         # 配置连接池参数，防止高并发下连接数溢出
