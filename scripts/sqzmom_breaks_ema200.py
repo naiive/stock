@@ -91,11 +91,11 @@ CONFIG = {
     "PIVOT_RIGHT": 15,  # 右侧 K 线数量
 
     # --- 🆕 文件路径/名称 ---
-    "CACHE_FILE": "../conf/stock_list_cache.json",
+    "CACHE_FILE": "../data/cache/stock_list_cache.json",
     "EXPORT_ENCODING": "utf-8-sig",        # CSV文件导出编码
     "OUTPUT_FILENAME_BASE": "Buy_Stocks",  # 输出文件前缀
-    "OUTPUT_FOLDER_BASE": "../stocks",     # csv输出 文件夹
-    "OUTPUT_LOG": "../logs",               # LogRedirector 日志输出文件夹
+    "OUTPUT_FOLDER_BASE": "../data/stocks",     # csv输出 文件夹
+    "OUTPUT_LOG": "../data/logs",               # LogRedirector 日志输出文件夹
 
     # --- 🆕 并发 ---
     "MAX_WORKERS": 10,      # 降低线程数到 10
@@ -109,7 +109,7 @@ CONFIG = {
     # --- 🆕 实时数据开关 ---
     # True:  使用腾讯实时股票全量接口 (fetch_realtime_snapshot)
     # False: 不使用，跳过实时数据获取（用于离线回测或非交易日）
-    "USE_REAL_TIME_DATA": True,
+    "USE_REAL_TIME_DATA": False,
 
     # --- 🆕 是否全量/分批控制 ---
     "SAMPLE_SIZE": 0,         # 0 或 None 表示全量
@@ -868,21 +868,8 @@ def main():
             # =============================================================
             res_df = res_df.sort_values(["得分", "涨幅%"], ascending=[False, False]).reset_index(drop=True)
 
-            # =============================================================
-            # 🆕 添加tradingview_api 返回的指标集合
-            # =============================================================
-            # code_list = res_df['代码'].astype(str).tolist()
-            # all_indicators = []
-            # for code in code_list:
-            #     # 对每个代码调用一次函数，并获取单行 DataFrame
-            #     df_single_row = get_tech_indicators_robust(code)
-            #     all_indicators.append(df_single_row)
-            #
-            # df_all_techs = pd.concat(all_indicators, ignore_index=True)
-            # res_df = pd.merge(res_df, df_all_techs, on='代码', how='left')
-
             # 导出 CSV
-            today_date_str = datetime.datetime.now().strftime('%Y-%m-%d')
+            today_date_str = datetime.datetime.now().strftime('%Y%m%d')
             folder_path = os.path.join(CONFIG["OUTPUT_FOLDER_BASE"], today_date_str)
             os.makedirs(folder_path, exist_ok=True)
             timestamp = datetime.datetime.now().strftime('%H%M%S')
