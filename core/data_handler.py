@@ -8,6 +8,9 @@ from core.data_manager import StockListManager
 
 
 class DataHandler:
+    """
+    实时合并历史数据
+    """
     def __init__(self):
         # 1. 初始化客户端
         self.mysql_client = MySQLClient()

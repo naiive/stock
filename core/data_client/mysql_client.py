@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
+import datetime
 from sqlalchemy import create_engine
-from conf.config import INDICATOR_CONFIG, DB_CONFIG
+from conf.config import TABLE_CONFIG, DB_CONFIG
 
 
 class MySQLClient:
@@ -18,51 +19,41 @@ class MySQLClient:
         )
         self.engine = create_engine(self.db_url, pool_size=10, max_overflow=20)
 
-    def get_stock_pool(self):
+    def fetch_daily_data(self, symbol, days=500):
         """
-        从基础信息表获取全量 A 股代码清单，并应用 EXCLUDE 规则
+        优化版：利用复合索引，通过日期范围直接定位数据
         """
-        query = "SELECT code, name FROM stock_basic"
-        df = pd.read_sql(query, self.engine)
+        # 1. 获取配置中的表名
+        table_name = TABLE_CONFIG.get("QUERY_DAILY_TABLE", "a_stock_daily")
 
-        exclude = INDICATOR_CONFIG["EXCLUDE"]
+        # 1. 计算起始日期
+        # 注意：交易日不等于自然日。如果要保证 365 根 K 线，
+        # 考虑到周末和节假日，建议回溯天数为 days * 1.5
+        start_buffer_days = int(days * 1.5)
+        start_date = (datetime.datetime.now() - datetime.timedelta(days=start_buffer_days)).strftime('%Y-%m-%d')
+        end_date = datetime.datetime.now().strftime('%Y-%m-%d')
 
-        # 1. 过滤创业板
-        if exclude["EXCLUDE_GEM"]:
-            df = df[~df['code'].str.startswith(('300', '301'))]
-
-        # 2. 过滤科创板
-        if exclude["EXCLUDE_KCB"]:
-            df = df[~df['code'].str.startswith(('688', '689'))]
-
-        # 3. 过滤北交所
-        if exclude["EXCLUDE_BJ"]:
-            df = df[~df['code'].str.startswith(('8', '4', '92'))]
-
-        # 4. 过滤 ST (模糊匹配)
-        if exclude["EXCLUDE_ST"]:
-            df = df[~df['name'].str.contains("ST|退")]
-
-        return df['code'].tolist()
-
-    def fetch_daily_data(self, symbol, days=365):
-        """
-        读取单只股票的日线历史数据。
-        注意：这里返回的顺序是根据日期升序排列，方便 indicators 计算
-        """
-        # 使用参数化查询防止 SQL 注入
+        # 2. 构建查询
+        # 利用 (code, date) 的索引顺序，极快定位
+        # 记得带上 adjust 条件，否则主键索引不完整
         query = f"""
             SELECT date, open, high, low, close, volume, amount 
-            FROM a_stock_daily 
+            FROM {table_name} 
             WHERE code = '{symbol}' 
-            ORDER BY date DESC 
-            LIMIT {days}
+              AND date >= '{start_date}'
+              AND date <= '{end_date}'
+              AND adjust = 'qfq'
+            ORDER BY date ASC
         """
         try:
+            # 3. 直接读取，已经是 ASC 升序，无需再次 sort
             df = pd.read_sql(query, self.engine)
-            # 策略需要历史在前，最新在后
-            df = df.sort_values('date', ascending=True).reset_index(drop=True)
+
+            # 4. 如果多取了，只保留最近的指定根数
+            if len(df) > days:
+                df = df.tail(days).reset_index(drop=True)
+
             return df
         except Exception as e:
-            print(f"Error fetching data for {symbol}: {e}")
+            print(f"❌ 读取 {symbol} 历史数据异常: {e}")
             return pd.DataFrame()

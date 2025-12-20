@@ -21,6 +21,8 @@ class MarketScanner:
         核心工作函数：单只股票的扫描逻辑。
         由线程池调用，实现并发执行。
         ***调用策略***
+        ***调用策略***
+        ***调用策略***
         """
         df = self.handler.get_full_data(symbol)
         return run_breakout_strategy(df, symbol)
@@ -48,7 +50,7 @@ class MarketScanner:
 
         # 读取并发线程数和批次间隔时间
         max_workers = SYSTEM_CONFIG.get("MAX_WORKERS", 10)
-        interval = SYSTEM_CONFIG.get("BATCH_INTERVAL_SEC", 2)
+        interval = SYSTEM_CONFIG.get("BATCH_INTERVAL_SEC", 1)
 
         # 3. 循环处理每一个批次
         for i, batch in enumerate(batches):
