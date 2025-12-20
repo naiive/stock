@@ -1,7 +1,9 @@
 # 项目排除路径
 /venv311/
 
-/logs
+data/cache/
+
+data/logs/
 
 /.idea/
 
