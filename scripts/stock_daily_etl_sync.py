@@ -14,7 +14,6 @@ import os
 import json
 import time
 import random
-import math
 import logging
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -32,7 +31,7 @@ import conf.config as conf
 
 # 1. 确定日期和基础目录
 CURRENT_DATE_STR = datetime.now().strftime("%Y%m%d")
-LOG_BASE_DIR = "../logs"
+LOG_BASE_DIR = "../data/logs"
 LOG_DAILY_DIR = os.path.join(LOG_BASE_DIR, CURRENT_DATE_STR)
 
 # 2. 创建目录 (如果不存在)
@@ -81,7 +80,7 @@ CONFIG = {
     # MySQL
     "DB": conf.DB_CONFIG,
 
-    "MYSQL_TABLE": conf.TABLE_CONFIG["insert_daily_table"],
+    "MYSQL_TABLE": conf.TABLE_CONFIG["INSERT_DAILY_TABLE"],
 
     # !!! 数据库要求：目标表 a_stock_daily 必须设置 (date, code, adjust) 为联合主键。
 
@@ -94,31 +93,28 @@ CONFIG = {
     # 过滤
     "EXCLUDE_GEM": True,  # 排除创业板（300、301）
     "EXCLUDE_KCB": True,  # 排除科创板（688）
-    "EXCLUDE_BJ": True,  # 排除北交所（8、4、92）
+    "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
     "EXCLUDE_ST": False,  # 排除 ST/退
     "ADJUST": "qfq",  # 'qfq' / 'hfq' / None
 
     # 并发与超时
     "MAX_WORKERS": 6,       # 建议 2~4 更稳
     "REQUEST_TIMEOUT": 28,  # 单次 akshare 请求超时（秒）
-    "CACHE_FILE": "../conf/stock_list_cache.json",
+    "CACHE_FILE": "../data/cache/stock_list_cache.json",
 
     # 重试策略（fetch_data_only 内部）
     "RETRY_TIMES": 2,
     "RETRY_BACKOFF_BASE": 1.6,  # 指数退避基数
 }
-
-
 # ------------------- /配置 -------------------
 
 
 # ------------------- 数据库连接 -------------------
 def get_db_engine():
     db_conf = CONFIG["DB"]
-    url = f"mysql+pymysql://{db_conf['user']}:{db_conf['password']}@{db_conf['host']}:{db_conf['port']}/{db_conf['database']}?charset=utf8mb4&local_infile=1"
+    url = f"mysql+pymysql://{db_conf['USER']}:{db_conf['PASS']}@{db_conf['HOST']}:{db_conf['PORT']}/{db_conf['DB_NAME']}?charset=utf8mb4&local_infile=1"
     engine = create_engine(url, pool_recycle=3600)
     return engine
-
 
 # ------------------- MySQL Upsert 方法定义 (最终且兼容命名参数版) -------------------
 def mysql_upsert_method(table, conn, keys, data_iter):
@@ -126,7 +122,6 @@ def mysql_upsert_method(table, conn, keys, data_iter):
     Pandas to_sql 自定义方法，实现 MySQL 的 ON DUPLICATE KEY UPDATE (Upsert)
     强制使用命名参数 (字典列表) 兼容 PyMySQL 的批量执行要求。
     """
-
     # 1. 将行数据转换为字典列表（命名参数格式）
     data = [dict(zip(keys, row)) for row in data_iter]
 
