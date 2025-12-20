@@ -60,7 +60,6 @@ import akshare as ak
 import asyncio
 from tqdm import tqdm
 
-from api.tradingview_api_client import get_tech_indicators_robust
 from api.stock_query import stock_zh_a_daily_mysql
 
 
