@@ -114,7 +114,7 @@ class MarketScanner:
             if i < len(batches) - 1 and interval > 0:
                 await asyncio.sleep(interval)
 
-        # 5. 扫描结束，导出 CSV 报表
+        # 5. 导出结果，包括拼接其他详细，CSV文件导出，Email发送，telegram聊天机器人等
         self.export_results()
 
     def _enrich_results(self, df_res):
