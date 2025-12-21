@@ -16,7 +16,13 @@ class MarketScanner:
         self.matched_list = []
 
     def _worker(self, symbol):
-        """同步计算逻辑，由线程池驱动"""
+        """
+        同步计算逻辑，由线程池驱动
+
+        *** 策略计算 ***
+        *** 策略计算 ***
+        *** 策略计算 ***
+        """
         df = self.handler.get_full_data(symbol)
         # 确保 strategy 内部逻辑已经适配最新的参数
         return run_breakout_strategy(df, symbol)
