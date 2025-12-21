@@ -160,7 +160,8 @@ class MarketScanner:
                 head_cols = [c for c in head_cols if c in df_enriched.columns]
                 others = [c for c in df_enriched.columns if c not in head_cols]
                 # 将名称放到第二个位置
-                others.insert(2,'name')
+                others = [c for c in others if c != 'name']
+                others.insert(1, 'name')
 
                 sorted_df = df_enriched[others + head_cols]
 
