@@ -7,14 +7,14 @@ Description: 全市场异步扫描引擎。采用 "Async IO + ThreadPool Multi-t
 """
 
 import asyncio
-import time
-import os
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from core.data_handler import DataHandler
-from conf.config import SYSTEM_CONFIG, PATH_CONFIG
+from conf.config import SYSTEM_CONFIG
 from strategies.breakout_strategy import run_breakout_strategy
+from core.utils.notify import export_and_notify
+from core.utils.enrich import enrich_results
 
 
 class MarketScanner:
@@ -114,73 +114,8 @@ class MarketScanner:
             if i < len(batches) - 1 and interval > 0:
                 await asyncio.sleep(interval)
 
-        # 5. 导出结果，包括拼接其他详细，CSV文件导出，Email发送，telegram聊天机器人等
+        # 5. 导出结果与通知（导出逻辑已封装到 notify 模块）
         self.export_results()
-
-    def _enrich_results(self, df_res):
-        """
-        [独立功能函数] 结果增强：为扫描结果注入实时财务映射信息
-        Args:
-            df_res (pd.DataFrame): 原始扫描命中的 DataFrame
-        Returns:
-            pd.DataFrame: 增强后的 DataFrame
-        """
-        if df_res.empty:
-            return df_res
-
-        try:
-            print("🔍 [系统] 正在执行数据增强：抓取最新换手率、市值等信息...")
-            # 调用 API 获取全市场快照
-            df_live = self.handler.api_client.fetch_realtime_snapshot()
-
-            if not df_live.empty:
-                """
-                # 1. 定义需要映射的字段
-                '代码': 'code',
-                '名称': 'name',
-                '换手率': 'turnover',
-                '市盈率-动态': 'pe',
-                '总市值': 'mcap',
-                '流通市值': 'ffmc',
-                '年涨幅': 'ytd'
-                """
-                info_cols = ['code', 'name', 'turnover', 'pe', 'mcap', 'ffmc', 'ytd']
-
-                df_info = df_live[[c for c in info_cols if c in df_live.columns]]
-
-                # 2. 执行合并
-                df_enriched = pd.merge(df_res, df_info, left_on='代码', right_on='code', how='left')
-
-                # 3. 清理与重排
-                if 'code' in df_enriched.columns:
-                    df_enriched.drop(columns=['code'], inplace=True)
-
-                # 定义美化后的列序
-                head_cols = ['turnover', 'pe', 'mcap', 'ffmc', 'ytd']
-                head_cols = [c for c in head_cols if c in df_enriched.columns]
-                others = [c for c in df_enriched.columns if c not in head_cols]
-                # 将名称放到第二个位置
-                others = [c for c in others if c != 'name']
-                others.insert(1, 'name')
-
-                sorted_df = df_enriched[others + head_cols]
-
-                # 重命名
-                export_map ={
-                    'name': '名称',
-                    'turnover':'换手率(%)',
-                    'pe':'市盈率(动)',
-                    'mcap':'总市值(亿)',
-                    'ffmc':'流通市值(亿)',
-                    'ytd':'年涨幅(%)'
-                }
-
-                return sorted_df.rename(columns=export_map)
-
-        except Exception as e:
-            print(f"⚠️ [警告] 数据增强过程出错: {e}")
-
-        return df_res  # 如果失败，返回原始数据，保证程序不中断
 
     def export_results(self):
         """
@@ -196,23 +131,10 @@ class MarketScanner:
 
         # 2. 调用独立增强函数 (根据开关参数)
         if SYSTEM_CONFIG.get("ENABLE_RESULT_ENRICHMENT", False):
-            final_df = self._enrich_results(final_df)
+            print("🔍 [系统] 正在执行数据增强：抓取最新换手率、市值等信息...")
+            final_df = enrich_results(final_df, handler=self.handler)
         else:
             print("ℹ️ [系统] 跳过数据增强，直接导出原始结果。")
 
-        # 3. 执行文件写入
-        self._write_to_csv(final_df)
-
-    @staticmethod
-    def _write_to_csv(df):
-        """
-        内部方法：负责物理写入 CSV 文件
-        """
-        date_str = time.strftime('%Y%m%d')
-        save_dir = os.path.join(PATH_CONFIG["OUTPUT_FOLDER_BASE"], date_str)
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        file_path = os.path.join(save_dir, f"scan_res_{time.strftime('%H%M%S')}.csv")
-        df.to_csv(file_path, index=False, encoding='utf-8-sig')
-        print(f"\n🎉 导出成功！文件路径: {file_path}")
+        # 3. 导出 + 通知（由 notify.export_and_notify 统一处理）
+        export_and_notify(final_df)
