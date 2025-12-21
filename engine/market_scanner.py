@@ -202,7 +202,8 @@ class MarketScanner:
         # 3. 执行文件写入
         self._write_to_csv(final_df)
 
-    def _write_to_csv(self, df):
+    @staticmethod
+    def _write_to_csv(df):
         """
         内部方法：负责物理写入 CSV 文件
         """
