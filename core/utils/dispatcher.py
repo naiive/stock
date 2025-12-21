@@ -19,7 +19,6 @@ async def run_dispatch(
         symbols: Sequence[str],
         worker_func: Callable[[str], Any],
         prepare_hook: Optional[Callable] = None,
-        prepare_msg: str = "正在执行预处理...",
         finalize_hook: Optional[Callable[[List[Any]], None]] = None,
         desc: str = "任务名称"
 ) -> List[Any]:
@@ -44,7 +43,7 @@ async def run_dispatch(
 
     # 1. 【预处理阶段】：在并发任务开始前，执行特定的环境准备工作
     if prepare_hook:
-        print(f"🛠️ [系统] {prepare_msg}")
+        # print(f"🛠️ [系统] {prepare_msg}")
         # 兼容性处理：支持异步(await)和同步(call)两种形态的钩子函数
         if asyncio.iscoroutinefunction(prepare_hook):
             await prepare_hook()
