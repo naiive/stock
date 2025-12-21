@@ -88,7 +88,7 @@ class MarketScanner:
             print(f"🔍 [系统] 正在执行数据增强：处理 {len(target_list)} 条命中数据...")
             final_df = enrich_results(final_df, handler=self.handler)
         else:
-            print("ℹ️ [系统] 跳过数据增强，直接导出原始结果。")
+            pass
 
         # 3. 控制台输出
         print(final_df)
