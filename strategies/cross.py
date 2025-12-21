@@ -47,7 +47,7 @@ def run_breakout_strategy(df, symbol):
 
         # 金叉
         signal = None
-        if wtc_signal == 'green' and wtc_red < -60 and wtc_green < -60 :
+        if wtc_signal == 'green' and wtc_red < -53 and wtc_green < -53 :
             signal = "买入"
 
         # 返回结果
