@@ -76,7 +76,7 @@ def run_breakout_strategy(df, symbol):
                 "日期": trade_date,
                 "代码": symbol,
                 "当前价": round(current_close, 2),
-                "涨幅%": round(pct_chg, 2),
+                "涨幅(%)": round(pct_chg, 2),
                 "EMA200": round(ema200_series.iloc[-1], 2),
                 "ADX": round(adx_val, 2),
                 "建议止损价": round(last_atr.get('atr_long_stop'), 2)

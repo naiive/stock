@@ -44,16 +44,21 @@ class APIClient:
             # 接口原始返回的是中文字段名，为了方便后续策略计算（df['close']），此处进行统一映射。
             column_map = {
                 '代码': 'code',
+                '名称': 'name',
                 '最新价': 'close',
                 '成交量': 'volume',
                 '今开': 'open',
                 '最高': 'high',
                 '最低': 'low',
                 '成交额': 'amount',
+                '换手率': 'turnover',
+                '市盈率-动态': 'pe',
+                '总市值': 'mcap',
+                '流通市值': 'ffmc',
+                '年初至今涨跌幅': 'ytd'
             }
             df = df.rename(columns=column_map)
 
-            # --- 步骤 2: 关键修正：股票代码清洗 ---
             # A股代码在不同平台可能有 'sh600000', '000001.SZ' 等不同格式。
             # 系统内部统一采用 6 位纯数字字符串。
             if 'code' in df.columns:
@@ -65,19 +70,18 @@ class APIClient:
                 # 如果代码列不存在，说明接口返回格式彻底改变，需返回空表触发异常
                 return pd.DataFrame()
 
-            # --- 步骤 3: 字段筛选与类型安全 ---
-            # 仅保留后续扫描引擎需要的核心字段，减少内存占用
-            required_cols = ['code', 'open', 'high', 'low', 'close', 'volume', 'amount']
-            df = df[[c for c in required_cols if c in df.columns]]
-
             # 强制类型转换：确保所有价格和成交量都是 float/int 类型
             # errors='coerce': 如果遇到无法转换的异常字符，则标记为 NaN，而不是直接报错崩溃
-            numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'amount']
+            money_cols = ['mcap', 'ffmc'] # 转化为亿元
+            numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'amount', 'turnover', 'pe', 'mcap', 'ffmc', 'ytd']
             for col in numeric_cols:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                    if col in money_cols:
+                        # 核心逻辑：转换为亿元并保留两位小数
+                        df[col] = (df[col] / 100000000).round(2)
 
             return df
-
         except Exception as e:
             # 这里抛出的异常会被 @retry 捕捉，从而在 5 秒后执行下一次尝试
             raise Exception(f"获取全市场实时快照失败: {e}")

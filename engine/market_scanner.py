@@ -96,6 +96,8 @@ class MarketScanner:
                             total=len(tasks),
                             desc=f"进度{i + 1}",
                             ncols=80)
+                # 初始化显示，避免“进度条”抖动
+                pbar.set_postfix({"命中": len(self.matched_list)})
 
                 for task in pbar:
                     res = await task  # 异步等待线程返回结果
@@ -115,29 +117,100 @@ class MarketScanner:
         # 5. 扫描结束，导出 CSV 报表
         self.export_results()
 
+    def _enrich_results(self, df_res):
+        """
+        [独立功能函数] 结果增强：为扫描结果注入实时财务映射信息
+        Args:
+            df_res (pd.DataFrame): 原始扫描命中的 DataFrame
+        Returns:
+            pd.DataFrame: 增强后的 DataFrame
+        """
+        if df_res.empty:
+            return df_res
+
+        try:
+            print("🔍 [系统] 正在执行数据增强：抓取最新换手率、市值等信息...")
+            # 调用 API 获取全市场快照
+            df_live = self.handler.api_client.fetch_realtime_snapshot()
+
+            if not df_live.empty:
+                """
+                # 1. 定义需要映射的字段
+                '代码': 'code',
+                '名称': 'name',
+                '换手率': 'turnover',
+                '市盈率-动态': 'pe',
+                '总市值': 'mcap',
+                '流通市值': 'ffmc',
+                '年涨幅': 'ytd'
+                """
+                info_cols = ['code', 'name', 'turnover', 'pe', 'mcap', 'ffmc', 'ytd']
+
+                df_info = df_live[[c for c in info_cols if c in df_live.columns]]
+
+                # 2. 执行合并
+                df_enriched = pd.merge(df_res, df_info, left_on='代码', right_on='code', how='left')
+
+                # 3. 清理与重排
+                if 'code' in df_enriched.columns:
+                    df_enriched.drop(columns=['code'], inplace=True)
+
+                # 定义美化后的列序
+                head_cols = ['turnover', 'pe', 'mcap', 'ffmc', 'ytd']
+                head_cols = [c for c in head_cols if c in df_enriched.columns]
+                others = [c for c in df_enriched.columns if c not in head_cols]
+                # 将名称放到第二个位置
+                others.insert(2,'name')
+
+                sorted_df = df_enriched[others + head_cols]
+
+                # 重命名
+                export_map ={
+                    'name': '名称',
+                    'turnover':'换手率(%)',
+                    'pe':'市盈率(动)',
+                    'mcap':'总市值(亿)',
+                    'ffmc':'流通市值(亿)',
+                    'ytd':'年涨幅(%)'
+                }
+
+                return sorted_df.rename(columns=export_map)
+
+        except Exception as e:
+            print(f"⚠️ [警告] 数据增强过程出错: {e}")
+
+        return df_res  # 如果失败，返回原始数据，保证程序不中断
+
     def export_results(self):
         """
-        结果持久化：将命中的信号导出为 CSV 文件。
+        [导出功能] 负责结果的最终落盘
+        有参数控制是否导出：名称、市值大小、市盈率等信息
         """
         if not self.matched_list:
             print("\n🏁 扫描完成，未发现匹配信号。")
             return
 
-        # 1. 整理数据为 DataFrame
-        df_res = pd.DataFrame(self.matched_list)
+        # 1. 转换为初始 DataFrame
+        final_df = pd.DataFrame(self.matched_list)
 
-        # 2. 构建保存路径（按日期分文件夹存储）
+        # 2. 调用独立增强函数 (根据开关参数)
+        if SYSTEM_CONFIG.get("ENABLE_RESULT_ENRICHMENT", False):
+            final_df = self._enrich_results(final_df)
+        else:
+            print("ℹ️ [系统] 跳过数据增强，直接导出原始结果。")
+
+        # 3. 执行文件写入
+        self._write_to_csv(final_df)
+
+    def _write_to_csv(self, df):
+        """
+        内部方法：负责物理写入 CSV 文件
+        """
         date_str = time.strftime('%Y%m%d')
         save_dir = os.path.join(PATH_CONFIG["OUTPUT_FOLDER_BASE"], date_str)
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        # 3. 以时分秒命名文件，防止多次扫描覆盖结果
         file_path = os.path.join(save_dir, f"scan_res_{time.strftime('%H%M%S')}.csv")
-
-        # 4. 写入文件，utf-8-sig 编码支持 Excel 直接打开且不乱码
-        df_res.to_csv(file_path, index=False, encoding='utf-8-sig')
-
-        print(f"\n🎉 扫描结束！")
-        print(f"📈 累计命中数量: {len(self.matched_list)}")
-        print(f"💾 结果文件已保存至: {file_path}")
+        df.to_csv(file_path, index=False, encoding='utf-8-sig')
+        print(f"\n🎉 导出成功！文件路径: {file_path}")
