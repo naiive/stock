@@ -55,10 +55,10 @@ def enrich_results(df_res: pd.DataFrame, handler=None, df_live: pd.DataFrame | N
         head_cols = ['turnover', 'pe', 'mcap', 'ffmc', 'ytd']
         head_cols = [c for c in head_cols if c in df_enriched.columns]
         others = [c for c in df_enriched.columns if c not in head_cols]
-        # 将名称靠前显示（放到第二位）
+        # 将名称靠前显示（放到第3位）
         if 'name' in others:
             others = [c for c in others if c != 'name']
-            others.insert(1, 'name')
+            others.insert(2, 'name')
 
         sorted_df = df_enriched[others + head_cols]
 
