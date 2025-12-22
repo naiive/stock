@@ -25,7 +25,7 @@ import json
 import urllib.request
 import urllib.parse
 
-from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG, PATH_CONFIG
+from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG, PATH_CONFIG, STRATEGY_CONFIG
 
 
 def send_email(
@@ -239,8 +239,9 @@ def export_and_notify(df: Optional[pd.DataFrame]) -> Optional[str]:
             save_dir = os.path.join(PATH_CONFIG["OUTPUT_FOLDER_BASE"], date_str)
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
-
-            file_path = os.path.join(save_dir, f"scan_res_{time.strftime('%H%M%S')}.csv")
+            # 策略名称前缀
+            strategy_name = STRATEGY_CONFIG.get("RUN_STRATEGY")
+            file_path = os.path.join(save_dir, f"{strategy_name}_{time.strftime('%H%M%S')}.csv")
             encoding = SYSTEM_CONFIG.get("EXPORT_ENCODING", "utf-8-sig")
 
             if isinstance(df, pd.DataFrame):
