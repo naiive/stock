@@ -3,7 +3,7 @@
 
 """
 ============================================================
-A 股历史数据批量导入 MySQL 脚本（Upsert 优化版 - 附带 Logging 和动态目录）
+A 股历史数据批量导入 MySQL 脚本
 说明：
 - 日志文件将保存到当前目录下的 stocks/YYYYMMDD 文件夹中。
 - 核心功能改为基于主键的 **更新或插入 (Upsert)**。
@@ -30,9 +30,15 @@ import conf.config as conf
 # ------------------- 动态日志目录配置 -------------------
 
 # 1. 确定日期和基础目录
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 CURRENT_DATE_STR = datetime.now().strftime("%Y%m%d")
-LOG_BASE_DIR = "../data/logs"
-LOG_DAILY_DIR = os.path.join(LOG_BASE_DIR, CURRENT_DATE_STR)
+LOG_BASE_DIR = "data/logs"
+LOG_DAILY_DIR = os.path.join(BASE_DIR, LOG_BASE_DIR, CURRENT_DATE_STR)
+
+
+CACHE_FILE = "data/cache/stock_list_cache.json"
+CACHE_DIR = os.path.join(BASE_DIR, CACHE_FILE)
 
 # 2. 创建目录 (如果不存在)
 # exist_ok=True 确保如果目录已存在，不会报错
@@ -41,9 +47,8 @@ try:
 except Exception as e:
     # 如果创建目录失败（权限等问题），则退回到当前目录
     print(f"警告：无法创建日志目录 {LOG_DAILY_DIR}。日志将保存到当前目录。错误: {e}")
-    LOG_DAILY_DIR = ".."
 
-LOG_FILE = os.path.join(LOG_DAILY_DIR, "stock_data_pull.log")
+LOG_FILE = os.path.join(LOG_DAILY_DIR, "daily_etl.log")
 # ------------------- /动态日志目录配置 -------------------
 
 
@@ -100,7 +105,7 @@ CONFIG = {
     # 并发与超时
     "MAX_WORKERS": 6,       # 建议 2~4 更稳
     "REQUEST_TIMEOUT": 28,  # 单次 akshare 请求超时（秒）
-    "CACHE_FILE": "../data/cache/stock_list_cache.json",
+    "CACHE_FILE": CACHE_DIR,
 
     # 重试策略（fetch_data_only 内部）
     "RETRY_TIMES": 2,
@@ -446,7 +451,6 @@ def main():
 
 
 if __name__ == "__main__":
-
     # 今天有数据就执行 main，么有数就等有数据后在执行
     # 一般16:00开始有数据
     today = datetime.now().strftime("%Y%m%d")
