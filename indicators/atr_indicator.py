@@ -3,7 +3,7 @@
 
 """
 # ============================================================
-# 策略 Average True Range Stop Loss Finder [veryfid]
+# 指标 Average True Range Stop Loss Finder [veryfid]
 # ============================================================
 """
 
