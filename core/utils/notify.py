@@ -8,7 +8,6 @@
 
 使用：在 engine/market_scanner.py 导出 CSV 后只需调用 `post_export_notify(file_path, df)`。
 """
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import os
@@ -199,6 +198,9 @@ def post_export_notify(
         print(f"⚠️ Notify failed: {e}")
 
 
+# =====================================================
+# scv 落盘
+# =====================================================
 def export_and_notify(df: Optional[pd.DataFrame]) -> Optional[str]:
     """
     对外统一导出+通知接口：
