@@ -8,12 +8,11 @@ Description: 全市场异步扫描引擎。采用 "Async IO + ThreadPool Multi-t
 
 import pandas as pd
 from core.data_handler import DataHandler
-from conf.config import SYSTEM_CONFIG
-from strategies.squeeze_resistance_strategy import run_strategy
+from conf.config import SYSTEM_CONFIG, STRATEGY_CONFIG
 from core.utils.notify import export_and_notify
 from core.utils.enrich import enrich_results
 from core.utils.dispatcher import run_dispatch
-
+from strategies.registry import STRATEGY_REGISTRY
 
 class MarketScanner:
     """
@@ -41,7 +40,19 @@ class MarketScanner:
 
         # 2. 调用核心策略函数计算信号
         # 这里传入 df 和 symbol，策略内部执行指标计算逻辑
-        return run_strategy(df, symbol)
+        run_name = STRATEGY_CONFIG.get("RUN_STRATEGY")
+
+        # 1️⃣ 未配置 or 为空，直接抛错
+        if not run_name:
+            raise ValueError("未配置 RUN_STRATEGY（策略名不能为空）")
+
+        # 2️⃣ 未注册策略，抛错
+        if run_name not in STRATEGY_REGISTRY:
+            raise ValueError(f"策略未注册: {run_name}")
+
+        # 3️⃣ 执行策略
+        run_func = STRATEGY_REGISTRY[run_name]
+        return run_func(df, symbol)
 
     async def run_full_scan(self, symbols=None):
         """
