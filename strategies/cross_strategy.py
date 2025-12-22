@@ -6,7 +6,7 @@ from indicators.atr_indicator import atr_indicator
 from indicators.wavetrend_with_crosses_indicator import wavetrend_with_crosses_indicator
 from indicators.ma_ribbon_indicator import ma_ribbon_indicator
 
-def run_breakout_strategy(df, symbol):
+def run_strategy(df, symbol):
     """
     A股全市场扫描策略
     策略：

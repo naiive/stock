@@ -9,7 +9,7 @@ Description: 全市场异步扫描引擎。采用 "Async IO + ThreadPool Multi-t
 import pandas as pd
 from core.data_handler import DataHandler
 from conf.config import SYSTEM_CONFIG
-from strategies.squeeze import run_breakout_strategy
+from strategies.squeeze_resistance_strategy import run_strategy
 from core.utils.notify import export_and_notify
 from core.utils.enrich import enrich_results
 from core.utils.dispatcher import run_dispatch
@@ -41,7 +41,7 @@ class MarketScanner:
 
         # 2. 调用核心策略函数计算信号
         # 这里传入 df 和 symbol，策略内部执行指标计算逻辑
-        return run_breakout_strategy(df, symbol)
+        return run_strategy(df, symbol)
 
     async def run_full_scan(self, symbols=None):
         """
