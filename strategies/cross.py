@@ -4,6 +4,7 @@ import datetime
 import pandas as pd
 from indicators.atr_indicator import atr_indicator
 from indicators.wavetrend_with_crosses_indicator import wavetrend_with_crosses_indicator
+from indicators.ma_ribbon_indicator import ma_ribbon_indicator
 
 def run_breakout_strategy(df, symbol):
     """
@@ -32,8 +33,9 @@ def run_breakout_strategy(df, symbol):
             return None
 
         # 3.2 价格在ema200上
-        ema200_series = df['close'].rolling(200).mean()
-        if current_close <= ema200_series.iloc[-1]:
+        df = ma_ribbon_indicator(df, length=200)
+        ema200 = float(df['ema_200'].iloc[-1])
+        if current_close < ema200:
             return None
 
         # 3.4 crosses
@@ -61,7 +63,7 @@ def run_breakout_strategy(df, symbol):
                 "代码": symbol,
                 "当前价": round(current_close, 2),
                 "涨幅(%)": round(pct_chg, 2),
-                "EMA200": round(ema200_series.iloc[-1], 2),
+                "EMA200": round(ema200, 2),
                 "建议止损价": round(last_atr.get('atr_long_stop'), 2),
                 "绿线": round(wtc_green, 2),
                 "红线": round(wtc_red, 2),
