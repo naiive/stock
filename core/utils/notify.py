@@ -8,25 +8,30 @@
 
 使用：在 engine/market_scanner.py 导出 CSV 后只需调用 `post_export_notify(file_path, df)`。
 """
-
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import os
-import smtplib
 import ssl
-from typing import List, Optional
+import json
+import time
+import smtplib
+import urllib.request
+import urllib.parse
+from typing import List, Optional, Tuple
+
 import pandas as pd
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email import encoders
 
-import json
-import urllib.request
-import urllib.parse
+from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG,PATH_CONFIG, STRATEGY_CONFIG
 
-from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG, PATH_CONFIG, STRATEGY_CONFIG
 
+# =====================================================
+# Email
+# =====================================================
 
 def send_email(
     smtp_host: str,
@@ -40,26 +45,23 @@ def send_email(
     body: str,
     attachment_path: Optional[str] = None,
 ) -> bool:
-    """
-    发送邮件（带可选附件）。
-
-    返回 True 表示发送成功；False 表示失败（已吞掉异常并打印）。
-    """
     try:
         msg = MIMEMultipart()
-        msg['From'] = sender
-        msg['To'] = ', '.join([x for x in to_list if x])
-        msg['Subject'] = subject
+        msg["From"] = sender
+        msg["To"] = ", ".join([x for x in to_list if x])
+        msg["Subject"] = subject
 
-        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        msg.attach(MIMEText(body, "plain", "utf-8"))
 
         if attachment_path and os.path.exists(attachment_path):
-            with open(attachment_path, 'rb') as f:
-                part = MIMEBase('application', 'octet-stream')
+            with open(attachment_path, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
                 part.set_payload(f.read())
             encoders.encode_base64(part)
-            filename = os.path.basename(attachment_path)
-            part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
+            part.add_header(
+                "Content-Disposition",
+                f'attachment; filename="{os.path.basename(attachment_path)}"'
+            )
             msg.attach(part)
 
         if use_ssl:
@@ -73,34 +75,28 @@ def send_email(
                 server.ehlo()
                 try:
                     server.starttls()
-                    if username:
-                        server.login(username, password)
                 except Exception:
-                    # 部分服务器不需要/不支持 starttls
-                    if username:
-                        server.login(username, password)
+                    pass
+                if username:
+                    server.login(username, password)
                 server.sendmail(sender, to_list, msg.as_string())
 
-        print("📧 邮件发送成功。")
+        print("📧 Email sent")
         return True
     except Exception as e:
-        print(f"⚠️ 邮件发送失败: {e}")
+        print(f"⚠️ Email failed: {e}")
         return False
 
 
-def _http_post_json(url: str, data: dict) -> dict:
-    req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={
-        'Content-Type': 'application/json'
-    })
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode('utf-8'))
-
+# =====================================================
+# Telegram HTTP
+# =====================================================
 
 def _http_post_form(url: str, data: dict) -> dict:
-    encoded = urllib.parse.urlencode(data).encode('utf-8')
+    encoded = urllib.parse.urlencode(data).encode("utf-8")
     req = urllib.request.Request(url, data=encoded)
     with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode('utf-8'))
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def send_telegram(
@@ -109,114 +105,98 @@ def send_telegram(
     text: str,
     disable_web_page_preview: bool = True,
 ) -> bool:
-    """
-    发送 Telegram 文本消息（使用官方 Bot API）。
-    不依赖第三方 requests 库，使用 urllib 实现。
-    """
     try:
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         payload = {
-            'chat_id': chat_id,
-            'text': text,
-            'disable_web_page_preview': disable_web_page_preview,
+            "chat_id": chat_id,
+            "text": text,
+            "disable_web_page_preview": disable_web_page_preview,
         }
         resp = _http_post_form(url, payload)
-        if not resp.get('ok'):
-            raise Exception(resp)
-        print("🤖 Telegram 文本消息已发送。")
+        if not resp.get("ok"):
+            raise RuntimeError(resp)
+        print("🤖 Telegram sent")
         return True
     except Exception as e:
-        print(f"⚠️ Telegram 发送失败: {e}")
+        print(f"⚠️ Telegram failed: {e}")
         return False
 
 
-def _build_summary_message(file_path: Optional[str], df: Optional[pd.DataFrame]) -> (str, str):
-    """
-    构建通知的标题与正文（含Top5预览）。
-    返回 (subject, body)
-    """
-    import time, os
+# =====================================================
+# Unified message builder (CORE)
+# =====================================================
 
+def build_unified_message(
+    df: Optional[pd.DataFrame],
+    file_path: Optional[str],
+    max_rows: int = 8,
+) -> Tuple[str, str]:
     hit_cnt = int(len(df)) if isinstance(df, pd.DataFrame) else 0
-    subject = f"{EMAIL_CONFIG.get('SUBJECT_PREFIX', '[StockScan]')} 扫描完成：{hit_cnt} 条信号"
+
+    title = f"📈 扫描完成：{hit_cnt} 条信号"
 
     lines = [
         f"时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
         f"命中数量：{hit_cnt}",
+        f"文件：{os.path.basename(file_path) if file_path else '<未落盘>'}",
+        "",
     ]
 
-    if file_path:
-        try:
-            lines.append(f"文件：{os.path.basename(file_path)}")
-        except Exception:
-            lines.append("文件：<未落盘>")
-    else:
-        lines.append("文件：<未落盘>")
-
-    # 追加 Top5 预览
     if isinstance(df, pd.DataFrame) and not df.empty:
-        try:
-            preview_cols = [c for c in ['代码', '名称', 'score', '涨幅(%)', '当前价'] if c in df.columns]
-            if preview_cols:
-                head_df = df[preview_cols].head(5)
-                lines.append("\nTop5 预览：")
-                for _, row in head_df.iterrows():
-                    preview = ' | '.join([f"{col}:{row[col]}" for col in preview_cols])
-                    lines.append(preview)
-        except Exception:
-            pass
+        cols = list(df.columns)
+        for _, row in df.head(max_rows).iterrows():
+            parts = [f"{col}:{row[col]}" for col in cols]
+            lines.append(" | ".join(parts))
+    else:
+        lines.append("（无信号数据）")
 
-    body = "\n".join(lines)
-    return subject, body
+    return title, "\n".join(lines)
 
 
-def post_export_notify(file_path: Optional[str], df: Optional[pd.DataFrame]) -> None:
-    """
-    对外统一通知接口：根据配置发送邮件与 Telegram 消息。
-    - file_path: 导出 CSV 文件的绝对路径。
-    - df: 导出前的 DataFrame（用于构造摘要与预览），可为 None。
-    """
+def clip_for_telegram(text: str, limit: int = 3800) -> str:
+    return text if len(text) <= limit else text[:limit] + "\n...（已截断）"
+
+
+# =====================================================
+# Public notify entry
+# =====================================================
+
+def post_export_notify(
+    file_path: Optional[str],
+    df: Optional[pd.DataFrame],
+) -> None:
     try:
-        subject, body = _build_summary_message(file_path, df)
+        title, body = build_unified_message(df, file_path)
 
-        # 邮件
+        # ---------- Email ----------
         if SYSTEM_CONFIG.get("ENABLE_EMAIL"):
-            try:
-                send_email(
-                    smtp_host=EMAIL_CONFIG.get('SMTP_HOST', ''),
-                    smtp_port=int(EMAIL_CONFIG.get('SMTP_PORT', 465)),
-                    use_ssl=bool(EMAIL_CONFIG.get('USE_SSL', True)),
-                    username=EMAIL_CONFIG.get('USERNAME', ''),
-                    password=EMAIL_CONFIG.get('PASSWORD', ''),
-                    sender=EMAIL_CONFIG.get('FROM', ''),
-                    to_list=[x for x in EMAIL_CONFIG.get('TO', []) if x],
-                    subject=subject,
-                    body=body,
-                    attachment_path=file_path,
-                )
-            except Exception as e:
-                print(f"⚠️ 邮件发送异常: {e}")
+            send_email(
+                smtp_host=EMAIL_CONFIG.get("SMTP_HOST", ""),
+                smtp_port=int(EMAIL_CONFIG.get("SMTP_PORT", 465)),
+                use_ssl=bool(EMAIL_CONFIG.get("USE_SSL", True)),
+                username=EMAIL_CONFIG.get("USERNAME", ""),
+                password=EMAIL_CONFIG.get("PASSWORD", ""),
+                sender=EMAIL_CONFIG.get("FROM", ""),
+                to_list=[x for x in EMAIL_CONFIG.get("TO", []) if x],
+                subject=title,
+                body=body,
+                attachment_path=file_path,
+            )
 
-        # Telegram
+        # ---------- Telegram ----------
         if SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
-            try:
-                import time, os
-                hit_cnt = int(len(df)) if isinstance(df, pd.DataFrame) else 0
-                tg_text = (
-                    f"📈 扫描完成：{hit_cnt} 条信号\n"
-                    f"文件：{os.path.basename(file_path) if file_path else '<未落盘>'}\n"
-                    f"时间：{time.strftime('%H:%M:%S')}"
-                )
-                send_telegram(
-                    bot_token=TELEGRAM_CONFIG.get('BOT_TOKEN', ''),
-                    chat_id=TELEGRAM_CONFIG.get('CHAT_ID', ''),
-                    text=tg_text,
-                    disable_web_page_preview=bool(TELEGRAM_CONFIG.get('DISABLE_WEB_PAGE_PREVIEW', True)),
-                )
-            except Exception as e:
-                print(f"⚠️ Telegram 推送异常: {e}")
+            tg_text = clip_for_telegram(f"{title}\n\n{body}")
+            send_telegram(
+                bot_token=TELEGRAM_CONFIG.get("BOT_TOKEN", ""),
+                chat_id=str(TELEGRAM_CONFIG.get("CHAT_ID", "")).strip(),
+                text=tg_text,
+                disable_web_page_preview=bool(
+                    TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True)
+                ),
+            )
+
     except Exception as e:
-        print(f"⚠️ 通知流程失败: {e}")
+        print(f"⚠️ Notify failed: {e}")
 
 
 def export_and_notify(df: Optional[pd.DataFrame]) -> Optional[str]:
