@@ -14,7 +14,7 @@ def run_breakout_strategy(df, symbol):
          涨幅 => 正的
          EMA200 => 价格站在均线上
          ADX => 大于20
-         SQZMOM挤压释放 => 至少5天挤压，当天释放，且是亮绿动能柱
+         SQZMOM挤压释放 => 至少6天挤压，当天释放，且是亮绿动能柱
          ATR Stop Loss
 
     :param df: DataFrame
