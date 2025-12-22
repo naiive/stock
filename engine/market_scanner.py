@@ -9,7 +9,7 @@ Description: 全市场异步扫描引擎。采用 "Async IO + ThreadPool Multi-t
 import pandas as pd
 from core.data_handler import DataHandler
 from conf.config import SYSTEM_CONFIG
-from strategies.breakout_strategy import run_breakout_strategy
+from strategies.squeeze import run_breakout_strategy
 from core.utils.notify import export_and_notify
 from core.utils.enrich import enrich_results
 from core.utils.dispatcher import run_dispatch
