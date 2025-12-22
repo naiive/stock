@@ -3,7 +3,7 @@
 
 """
 # ============================================================
-# 策略 WaveTrend with Crosses [LazyBear]
+# 指标 WaveTrend with Crosses [LazyBear]
 # ============================================================
 """
 
@@ -12,7 +12,7 @@ import numpy as np
 
 from conf.config import INDICATOR_CONFIG
 
-def  wavetrend_with_crosses_indicator(
+def wavetrend_with_crosses_indicator(
         df: pd.DataFrame,
         channelLength: int = 10,
         averageLength: int = 21,
