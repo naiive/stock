@@ -74,7 +74,7 @@ async def run_dispatch(
             # 4. 【进度监控】：使用 tqdm 实时渲染进度条
             # dynamic_ncols=True 让进度条自动根据窗口宽度伸缩，解决文字溢出导致的换行问题
             with tqdm(total=len(tasks), desc=f" > {desc}", dynamic_ncols=True, leave=True) as pbar:
-                pbar.set_postfix({"总命中": len(all_matched)})
+                pbar.set_postfix({"累计命中": len(all_matched)})
 
                 # asyncio.as_completed：谁先算完就先返回谁，保证进度条响应的实时性
                 for coro in asyncio.as_completed(tasks):
@@ -84,7 +84,7 @@ async def run_dispatch(
 
                     # 手动更新进度条（步进 1），并同步更新右侧的全局命中计数
                     pbar.update(1)
-                    pbar.set_postfix({"总命中": len(all_matched)})
+                    pbar.set_postfix({"累计命中": len(all_matched)})
 
         # 5. 【流控机制】：批次间非阻塞休息，释放 CPU 压力，防止网络 IO 拥塞
         if i < len(batches) - 1 and interval > 0:
