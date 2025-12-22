@@ -18,27 +18,55 @@ import logging
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
-
 import pandas as pd
 import akshare as ak
 from tqdm import tqdm
-
 from sqlalchemy import create_engine, text
-
 import conf.config as conf
 
-# ------------------- 动态日志目录配置 -------------------
-
-# 1. 确定日期和基础目录
+# 确定日期和基础目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 CURRENT_DATE_STR = datetime.now().strftime("%Y%m%d")
 LOG_BASE_DIR = "data/logs"
-LOG_DAILY_DIR = os.path.join(BASE_DIR, LOG_BASE_DIR, CURRENT_DATE_STR)
-
-
 CACHE_FILE = "data/cache/stock_list_cache.json"
 CACHE_DIR = os.path.join(BASE_DIR, CACHE_FILE)
+LOG_DAILY_DIR = os.path.join(BASE_DIR, LOG_BASE_DIR, CURRENT_DATE_STR)
+
+# ------------------- 配置 -------------------
+CONFIG = {
+    # MySQL
+    "DB": conf.DB_CONFIG,
+
+    "MYSQL_TABLE": conf.TABLE_CONFIG["INSERT_DAILY_TABLE"],
+
+    # !!! 数据库要求：目标表 a_stock_daily 必须设置 (date, code, adjust) 为联合主键。
+
+    # 抓取范围控制（优先级从高到低）
+    "TARGET_STOCKS": [],      # 优先级最高：指定需要更新的股票代码列表["600519", "600520"]。空列表 [] 表示全量。
+    "TARGET_START_DATE": "",  # 优先级次之：指定开始日期，格式 "YYYYMMDD"。
+    "TARGET_END_DATE": "",    # 优先级次之：指定结束日期，格式 "YYYYMMDD"。
+    "DAYS": 1,                # 优先级最低：如果 TARGET_START_DATE 为空，则抓取最近 DAYS 天的数据。
+
+    # 过滤
+    "EXCLUDE_GEM": True,  # 排除创业板（300、301）
+    "EXCLUDE_KCB": True,  # 排除科创板（688）
+    "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
+    "EXCLUDE_ST": False,  # 排除 ST/退
+    "ADJUST": "qfq",  # 'qfq' / 'hfq' / None
+
+    # 并发与超时
+    "MAX_WORKERS": 6,       # 建议 2~4 更稳
+    "REQUEST_TIMEOUT": 28,  # 单次 akshare 请求超时（秒）
+    "CACHE_FILE": CACHE_DIR,
+
+    # 重试策略（fetch_data_only 内部）
+    "RETRY_TIMES": 2,
+    "RETRY_BACKOFF_BASE": 1.6,  # 指数退避基数
+}
+# ------------------- /配置 -------------------
+
+
+# ------------------- 动态日志目录配置 -------------------
 
 # 2. 创建目录 (如果不存在)
 # exist_ok=True 确保如果目录已存在，不会报错
@@ -78,41 +106,6 @@ if not logger.handlers:
     logger.addHandler(fh)
     logger.addHandler(ch)
 # ------------------- /日志配置 -------------------
-
-
-# ------------------- 配置 -------------------
-CONFIG = {
-    # MySQL
-    "DB": conf.DB_CONFIG,
-
-    "MYSQL_TABLE": conf.TABLE_CONFIG["INSERT_DAILY_TABLE"],
-
-    # !!! 数据库要求：目标表 a_stock_daily 必须设置 (date, code, adjust) 为联合主键。
-
-    # 抓取范围控制（优先级从高到低）
-    "TARGET_STOCKS": [],      # 优先级最高：指定需要更新的股票代码列表["600519", "600520"]。空列表 [] 表示全量。
-    "TARGET_START_DATE": "",  # 优先级次之：指定开始日期，格式 "YYYYMMDD"。
-    "TARGET_END_DATE": "",    # 优先级次之：指定结束日期，格式 "YYYYMMDD"。
-    "DAYS": 1,                # 优先级最低：如果 TARGET_START_DATE 为空，则抓取最近 DAYS 天的数据。
-
-    # 过滤
-    "EXCLUDE_GEM": True,  # 排除创业板（300、301）
-    "EXCLUDE_KCB": True,  # 排除科创板（688）
-    "EXCLUDE_BJ": True,   # 排除北交所（8、4、92）
-    "EXCLUDE_ST": False,  # 排除 ST/退
-    "ADJUST": "qfq",  # 'qfq' / 'hfq' / None
-
-    # 并发与超时
-    "MAX_WORKERS": 6,       # 建议 2~4 更稳
-    "REQUEST_TIMEOUT": 28,  # 单次 akshare 请求超时（秒）
-    "CACHE_FILE": CACHE_DIR,
-
-    # 重试策略（fetch_data_only 内部）
-    "RETRY_TIMES": 2,
-    "RETRY_BACKOFF_BASE": 1.6,  # 指数退避基数
-}
-# ------------------- /配置 -------------------
-
 
 # ------------------- 数据库连接 -------------------
 def get_db_engine():
