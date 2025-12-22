@@ -62,7 +62,7 @@ def run_breakout_strategy(df, symbol):
 
         # 3.4.2. SQZ逻辑判断
         signal = "无"
-        if sqz_status == 'OFF' and prev_status == 'ON' and prev_sqz_id >= 5:
+        if sqz_status == 'OFF' and prev_status == 'ON' and prev_sqz_id >= 6:
             if sqz_hcolor == 'lime':
                 signal = "买入"
 
