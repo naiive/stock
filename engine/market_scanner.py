@@ -12,7 +12,7 @@ from conf.config import SYSTEM_CONFIG, STRATEGY_CONFIG
 from core.utils.notify import export_and_notify
 from core.utils.enrich import enrich_results
 from core.utils.dispatcher import run_dispatch
-from strategies.registry import STRATEGY_REGISTRY
+from conf.registry import STRATEGY_REGISTRY
 
 class MarketScanner:
     """
