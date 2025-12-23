@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import datetime
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 
 def run_strategy(df, symbol, min_bright_red_days=5):
