@@ -57,7 +57,7 @@ def run_strategy(df, symbol):
             # 4. 只有信号触发，才计算 ATR 止损
             df = atr_indicator(df, length=14, multiplier=1.5)
             last_atr = df.iloc[-1]
-            trade_date = str(last.get('date')) if 'date' in last else datetime.datetime.now().strftime('%Y-%m-%d')
+            trade_date = str(last.get('date'))
             return {
                 "日期": trade_date,
                 "代码": symbol,

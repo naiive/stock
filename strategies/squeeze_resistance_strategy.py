@@ -70,7 +70,7 @@ def run_strategy(df, symbol):
             # 4. 只有信号触发，才计算 ATR 止损
             df = atr_indicator(df, length=14, multiplier=1.5)
             last_atr = df.iloc[-1]
-            trade_date = str(last.get('date')) if 'date' in last else datetime.datetime.now().strftime('%Y-%m-%d')
+            trade_date = str(last.get('date'))
 
             # ===================================================
             # 🆕 增加 "突破趋势" 和 "得分" 的计算逻辑

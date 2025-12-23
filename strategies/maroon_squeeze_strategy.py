@@ -61,7 +61,7 @@ def run_strategy(df, symbol, min_bright_red_days=5):
             return None
 
         # 6. 命中结果封装
-        trade_date = str(last.get('date')) if 'date' in last else datetime.datetime.now().strftime('%Y-%m-%d')
+        trade_date = str(last.get('date'))
 
         return {
             "日期": trade_date,
