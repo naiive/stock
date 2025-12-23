@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import datetime
 import pandas as pd
 from indicators.atr_indicator import atr_indicator
 from indicators.wavetrend_with_crosses_indicator import wavetrend_with_crosses_indicator
