@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import pandas as pd
-import datetime
 
 from indicators.adx_di_indicator import adx_di_indicator
 from indicators.atr_indicator import atr_indicator

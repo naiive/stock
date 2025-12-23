@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import pandas as pd
-import datetime
 
 from indicators.atr_indicator import atr_indicator
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator

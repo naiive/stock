@@ -9,8 +9,6 @@ Fair Value Gap Indicator (LuxAlgo logic, Quant version)
 
 import numpy as np
 import pandas as pd
-from conf.config import INDICATOR_CONFIG
-
 
 def fair_value_gap_indicator(
     df: pd.DataFrame,
