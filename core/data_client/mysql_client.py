@@ -11,8 +11,7 @@ Description: 数据库访问层。基于 SQLAlchemy 构建高效连接池，负�
 import pandas as pd
 import datetime
 from sqlalchemy import create_engine
-from conf.config import TABLE_CONFIG, DB_CONFIG
-
+from conf.config import SYSTEM_CONFIG, TABLE_CONFIG, DB_CONFIG
 
 class MySQLClient:
     """
@@ -62,7 +61,8 @@ class MySQLClient:
         start_buffer_days = int(days * 1.5)
         now = datetime.datetime.now()
         start_date = (now - datetime.timedelta(days=start_buffer_days)).strftime('%Y-%m-%d')
-        end_date = now.strftime('%Y-%m-%d')
+        # 有历史结束日期就用，没有就用当前日期
+        end_date = SYSTEM_CONFIG.get("HISTORY_END_DAY") or datetime.datetime.now().strftime('%Y-%m-%d')
 
         # 3. 构建原生 SQL 查询语句
         # WHERE 条件顺序应尽量匹配数据库索引：code -> date -> adjust
