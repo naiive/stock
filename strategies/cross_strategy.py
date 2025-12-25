@@ -9,7 +9,7 @@ def run_strategy(df, symbol):
     """
     A股全市场扫描策略
     策略：
-         cross 为 green
+         cross 为 green 且在 超卖区 wtc_red < -53 and wtc_green < -53
 
     :param df: DataFrame
     :param symbol: 股票代码
