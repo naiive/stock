@@ -2,114 +2,87 @@
 
 import numpy as np
 import pandas as pd
-
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 
-def run_strategy(df, symbol):
-    """
-    SQZMOM 底背离策略逻辑实现
-    """
-    try:
-        # 计算指标
-        df = squeeze_momentum_indicator(df)
 
-        if len(df) < 100:
-            return None
+def run_strategy(df, symbol,
+                 lookback=60,         # P1 搜索回溯最大范围
+                 min_dist=10,         # P1 与 P2 两个低点之间的最小 K 线间隔
+                 p2_bright_len=5,     # P2 及其左侧必须连续多少根“Red” (亮红)
+                 p1_valley_win=5,     # P1 局部波谷确认窗口
+                 p1_mom_buffer=1.15): # P1 动能绝对值必须是 P2 的 1.15 倍以上
+        """
+        SQZMOM 底背离策略 - 动能衰减增强版
+        """
+        try:
+            df = squeeze_momentum_indicator(df)
+            if len(df) < lookback + 20: return None
 
-        # --- 变量定义 ---
-        lookback = 80
-        p2_min_bright = 5
-        p1_confirm_win = 3
+            moms = df['sqz_hvalue'].values
+            hcolors = df['sqz_hcolor'].values
+            lows = df['low'].values
+            dates = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d').values
+            curr_idx = len(df) - 1
 
-        # --- 价格与均线前置过滤 (快速剪枝，提升扫描速度) ---
-        current_close = float(df['close'].iloc[-1])
-        prev_close = float(df['close'].iloc[-2])
-        pct_chg = (current_close - prev_close) / prev_close * 100
+            # --- 第一阶段：判定 P2 (暗红转折 + 连续 Red) ---
+            # 1. 今天必须是 Maroon (暗红)
+            if hcolors[curr_idx] != 'maroon':
+                return None
 
-        # --- 关键修正：从列中获取日期而非 index ---
-        dates = df['date'].values
-        dates = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d').values
-        mom = df['sqz_hvalue'].values
-        low = df['low'].values
-        curr_idx = len(df) - 1
+            # 2. 昨天 (P2) 及其左侧共 5 根必须是 Red (亮红)
+            p2_idx = curr_idx - 1
+            for i in range(p2_idx, p2_idx - p2_bright_len, -1):
+                if i <= 0 or hcolors[i] != 'red':
+                    return None
 
-        # --- 1. 判定 P2 (当前触发点) ---
-        # 处理可能存在的 NaN 值
-        if np.isnan(mom[curr_idx]) or np.isnan(mom[curr_idx - 1]):
-            return None
+            # 3. 锁定 P2 数值
+            p2_mom = moms[p2_idx]
+            p2_price = lows[p2_idx]
+            p2_date = dates[p2_idx]
 
-        # 当前必须是红色暗红 (数值比前一根大，且小于0)
-        if not (mom[curr_idx] < 0 and mom[curr_idx] > mom[curr_idx - 1]):
-            return None
+            # --- 第二阶段：回溯 P1 (寻找更深的左坑) ---
+            p1_idx = None
+            search_end = p2_idx - min_dist
+            search_start = max(p1_valley_win, search_end - lookback)
 
-        # 向上追溯亮红柱数量
-        bright_count = 0
-        p2_valley_idx = curr_idx - 1
+            for i in range(search_end, search_start, -1):
+                curr_m = moms[i]
+                if curr_m < 0:
+                    # P1 局部波谷确认
+                    window = moms[i - p1_valley_win: i + p1_valley_win + 1]
+                    if curr_m == np.min(window):
+                        # 关键判定：动能衰减必须达标 (P1 的坑必须比 P2 深 buffer 倍)
+                        # 负数比较：p1_mom 必须更小 (例如 -11.5 < -5 * 1.15)
+                        if curr_m <= (p2_mom * p1_mom_buffer):
+                            p1_idx = i
+                            break
 
-        for i in range(curr_idx - 1, 0, -1):
-            if np.isnan(mom[i]) or np.isnan(mom[i - 1]):
-                break
-            # 绝对值连续放大或等于：负数越来越小
-            if mom[i] <= mom[i - 1] < 0:
-                bright_count += 1
-            else:
-                p2_valley_idx = i
-                break
+            if p1_idx is None: return None
 
-        if bright_count < (p2_min_bright - 1):
-            return None
+            p1_mom = moms[p1_idx]
+            p1_price = lows[p1_idx]
+            p1_date = dates[p1_idx]
 
-        # P2 对比数据
-        p2_val_mom = mom[p2_valley_idx]
-        p2_val_price = low[p2_valley_idx]
-        p2_date = dates[p2_valley_idx]  # 获取正确的 P2 日期
+            # --- 第三阶段：最终背离确认与质量打分 ---
+            # 1. 价格新低或双底 (P2 <= P1)
+            # 2. 动能衰减 (P2 > P1)
+            if p2_price < p1_price and p2_mom > p1_mom:
+                # 计算衰减比：P1深/P2深。比值越大，质量越高。
+                mom_ratio = round(p1_mom / p2_mom, 2) if p2_mom != 0 else 0
 
-        # --- 2. 寻找历史参考点 P1 (80根内) ---
-        p1_idx = None
-        search_end = p2_valley_idx - 1
-        search_start = max(p1_confirm_win, search_end - lookback)
-
-        for i in range(search_end, search_start, -1):
-            curr_m = mom[i]
-            if not np.isnan(curr_m) and curr_m < 0:
-                window_data = mom[i - p1_confirm_win: i + p1_confirm_win + 1]
-                # 确保窗口内没有 NaN 且当前是最小值
-                if not np.isnan(window_data).any() and curr_m == np.min(window_data):
-                    p1_idx = i
-                    break
-
-        if p1_idx is None:
-            return None
-
-        # P1 对比数据
-        p1_val_mom = mom[p1_idx]
-        p1_val_price = low[p1_idx]
-        p1_date = dates[p1_idx]  # 获取正确的 P1 日期
-
-        # --- 3. 最终底背离对比 (包含等于) ---
-        if p2_val_price <= p1_val_price and p2_val_mom >= p1_val_mom:
-            # 组织返回结果
-            res = {
-                '日期': dates[curr_idx],
-                '代码': symbol,
-                '背离': '底背离',
-                '当前价': round(current_close, 2),
-                '涨幅(%)': round(pct_chg, 2),
-                '左波谷': {
-                    '日期': p1_date,
-                    '最低价': round(float(p1_val_price), 2),
-                    '动能柱值': round(float(p1_val_mom), 4)
-                },
-                '右波谷': {
-                    '日期': p2_date,
-                    '最低价': round(float(p2_val_price), 2),
-                    '动能柱值': round(float(p2_val_mom), 4)
+                return {
+                    'symbol': symbol,
+                    'signal': 'Bullish_Divergence',
+                    'p1_info': {'date': p1_date, 'price': p1_price, 'mom': round(p1_mom, 4)},
+                    'p2_info': {'date': p2_date, 'price': p2_price, 'mom': round(p2_mom, 4)},
+                    'quality_metrics': {
+                        'mom_ratio': mom_ratio,  # 越高越好
+                        'price_drop': round((p1_price - p2_price) / p1_price * 100, 2),  # 价格破位比例
+                        'time_dist': p2_idx - p1_idx  # 两个波谷的时间间距
+                    }
                 }
-            }
 
-            return res
-
-    except Exception as e:
-        raise e
-
-    return None
+        except Exception as e:
+            print(f"Error {symbol}: {e}")
+            return None
+        return None
