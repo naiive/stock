@@ -2,6 +2,7 @@
 
 # 策略注册表
 from strategies import (
+    aroon_oscillator_strategy,
     cross_strategy,
     squeeze_resistance_strategy,
     squeeze_adx_strategy,
@@ -11,6 +12,7 @@ from strategies import (
 )
 
 STRATEGY_REGISTRY = {
+    "aroon_oscillator": aroon_oscillator_strategy.run_strategy,
     "cross": cross_strategy.run_strategy,
     "squeeze_resistance": squeeze_resistance_strategy.run_strategy,
     "squeeze_adx": squeeze_adx_strategy.run_strategy,
