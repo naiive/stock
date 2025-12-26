@@ -94,14 +94,14 @@ def run_strategy(df, symbol):
                 '当前价': round(current_close, 2),
                 '涨幅(%)': round(pct_chg, 2),
                 '左波谷': {
-                    'date': p1_date,
-                    'price': round(float(p1_val_price), 2),
-                    'mom': round(float(p1_val_mom), 4)
+                    '日期': p1_date,
+                    '最低价': round(float(p1_val_price), 2),
+                    '动能柱值': round(float(p1_val_mom), 4)
                 },
                 '右波谷': {
-                    'date': p2_date,
-                    'price': round(float(p2_val_price), 2),
-                    'mom': round(float(p2_val_mom), 4)
+                    '日期': p2_date,
+                    '最低价': round(float(p2_val_price), 2),
+                    '动能柱值': round(float(p2_val_mom), 4)
                 }
             }
 
