@@ -2,7 +2,7 @@
 
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 
-def run_strategy(df, symbol, min_bright_red_days=5):
+def run_strategy(df, symbol, min_bright_red_days=7):
     """
     TTM Squeeze 严苛形态筛选策略
 
