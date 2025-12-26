@@ -7,11 +7,11 @@ from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 def run_strategy(
     df,
     symbol,
-    lookback=60,          # P1 最大回溯长度，防止结构过老
-    min_dist=10,          # P1 与 P2 的最小 K 线间隔，防止噪声
-    p2_bright_len=5,      # P2 左侧连续“亮红”数量（确认强下跌）
-    p1_valley_win=5,      # P1 局部波谷确认窗口
-    p1_mom_buffer=1.15    # P1 动能深度必须 ≥ P2 的 1.15 倍
+    lookback = 90,          # P1 最大回溯长度，防止结构过老
+    min_dist = 12,          # P1 与 P2 的最小 K 线间隔，防止噪声
+    p2_bright_len = 6,      # P2 左侧连续“亮红”数量（确认强下跌）
+    p1_valley_win = 5,      # P1 局部波谷确认窗口
+    p1_mom_buffer = 1.2     # P1 动能深度必须 ≥ P2 的 1.2 倍
 ):
     """
     SQZMOM + OBV 底背离【打分系统 · 实盘稳健版】
