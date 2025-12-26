@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 
-
 def run_strategy(
     df,
     symbol,
@@ -137,15 +136,20 @@ def run_strategy(
 
         # ------------------------------------------------------------
         # 2️⃣ OBV 资金分（Max 30）
-        # 使用「P1 → P2 的 OBV 斜率」
+        # OBV 相对承接强度（尺度无关）
         # 逻辑：下跌过程中资金是否提前进场
         # ------------------------------------------------------------
-        obv_slope = (p2_obv - p1_obv) / (p2_idx - p1_idx)
+        avg_vol = df["volume"].iloc[p1_idx:p2_idx].mean()
+        obv_strength = (p2_obv - p1_obv) / avg_vol
 
-        if obv_slope > 0:
-            score += 30          # 明确资金流入
-        elif obv_slope > -abs(p1_obv) * 0.001:
-            score += 10          # 基本持平，未明显流出
+        if obv_strength >= 2.0:
+            score += 30
+        elif obv_strength >= 0.5:
+            score += 20
+        elif obv_strength > -0.5:
+            score += 10
+        else:
+            score += 0
 
         # ------------------------------------------------------------
         # 3️⃣ 时间结构分（Max 15）
@@ -192,7 +196,7 @@ def run_strategy(
             "综合得分": score,
             "信号强度": "强烈做多" if score >= 80 else "谨慎做多",
             "动能衰减": mom_display(mom_ratio),
-            "资金承接": obv_display(p2_obv - p1_obv),
+            "资金承接": obv_display_relative(obv_strength),
             "结构间隔": dist_display(p2_idx - p1_idx),
             "破位幅度": price_drop_display(drop_pct),
             "左波峰": {
@@ -224,19 +228,17 @@ def mom_display(ratio):
     else:
         return f"【<1.2】{r} → 下跌未衰竭"
 
-
-
-def obv_display(obv_diff):
-    """2️⃣ 资金承接强度（OBV）"""
-    d = int(obv_diff)
-    if d > 0:
-        return f"【>0】+{d} → 资金明显承接（吸筹）"
-    elif d > -1000:
-        return f"【≈0】{d} → 资金观望（持平）"
+def obv_display_relative(obv_strength):
+    """资金承接（obv_strength）"""
+    v = round(obv_strength, 2)
+    if v >= 2.0:
+        return f"【≥2.0】{v} → 强力吸筹"
+    elif v >= 0.5:
+        return f"【0.5–2.0】{v} → 资金承接"
+    elif v > -0.5:
+        return f"【-0.5–0.5】{v} → 资金观望"
     else:
-        return f"【<0】{d} → 资金流出（风险）"
-
-
+        return f"【<-0.5】{v} → 资金流出"
 
 def dist_display(dist):
     """3️⃣ 两次低点间隔（time_dist）"""
