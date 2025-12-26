@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import pandas as pd
 
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 
@@ -27,6 +28,7 @@ def run_strategy(df, symbol):
 
         # --- 关键修正：从列中获取日期而非 index ---
         dates = df['date'].values
+        dates = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d').values
         mom = df['sqz_hvalue'].values
         low = df['low'].values
         curr_idx = len(df) - 1
