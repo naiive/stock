@@ -89,11 +89,6 @@ def run_strategy(df, symbol):
                 'p2_bright_len': bright_count + 1
             }
 
-            # 打印信息方便调试
-            print(f"[{symbol}] 底背离触发!")
-            print(f"P1(历史): {p1_time} | 价格: {p1_val_price}")
-            print(f"P2(当前): {p2_time} | 价格: {p2_val_price}")
-
             return res
 
     except Exception as e:
