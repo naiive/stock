@@ -14,7 +14,7 @@ def macd_histogram_double_divergence_indicator(
         lb_right: int = 2,         # 右侧回溯数量
         size_factor: float = 0.1,  # 最小高度门槛系数
         size_ratio: float = 1.2,   # 左坑 / 右坑 深度比值
-        max_green: int = 3         # 允许最大绿柱数量
+        max_green: int = 0         # 允许最大绿柱数量【为零吧，不要最好】
 ):
     """
     MACD Histogram 双底背离（严格形态学定义）
