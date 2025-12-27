@@ -67,16 +67,8 @@ def run_strategy(df, symbol):
 
         # 返回结果
         if signal == "买入":
-            # 1. 获取触发点之前的 6 个柱状图颜色（不包含当天）
             # iloc[-7:-1] 表示从倒数第7个开始，到倒数第2个结束（不含倒数第1个）
             pre_signal_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()
-
-            # 2. 评分逻辑：统计这 6 根中红色系柱子的数量
-            red_shades = ['red', 'maroon']
-            score = sum(1 for col in pre_signal_colors if col in red_shades)
-
-            # 3. 格式化打印 (为了清晰，标记为 -1 到 -6)
-            # -1 代表昨天，-6 代表六天前
             color_parts = []
             for i in range(6):
                 # pre_signal_colors 的最后一个元素是昨天
@@ -90,12 +82,17 @@ def run_strategy(df, symbol):
             last_atr = df.iloc[-1]
             trade_date = str(last.get('date'))
 
+            # 涨幅
+            current_close = float(df['close'].iloc[-1])
+            prev_close = float(df['close'].iloc[-2])
+            pct_change = round((current_close - prev_close) / prev_close * 100, 2)
+
             return {
                 "日期": trade_date,
                 "代码": symbol,
                 "当前价": round(current_close, 2),
-                "信号前红色动能分": f"{score}/6",  # 分数越高，说明释放前压抑越久
-                "信号前6日颜色": color_str,  # 示例: 前1日:maroon | 前2日:red...
+                "涨幅(%)": float(pct_change),
+                "信号前6日颜色": color_str,
                 "建议止损价": round(last_atr.get('atr_long_stop'), 2)
             }
 
