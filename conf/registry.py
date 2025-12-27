@@ -4,6 +4,7 @@
 from strategies import (
     aroon_oscillator_strategy,
     cross_strategy,
+    squeeze_strategy,
     squeeze_resistance_strategy,
     squeeze_adx_strategy,
     squeeze_maroon_strategy,
@@ -16,6 +17,8 @@ STRATEGY_REGISTRY = {
     "aroon_oscillator": aroon_oscillator_strategy.run_strategy,
     "cross": cross_strategy.run_strategy,
     "squeeze_resistance": squeeze_resistance_strategy.run_strategy,
+    # 原生squeeze策略
+    "squeeze": squeeze_strategy.run_strategy,
     "squeeze_adx": squeeze_adx_strategy.run_strategy,
     "squeeze_maroon": squeeze_maroon_strategy.run_strategy,
     "squeeze_divergence": squeeze_divergence_strategy.run_strategy,
