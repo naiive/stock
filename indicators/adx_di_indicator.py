@@ -43,7 +43,7 @@ def adx_di_indicator(
 
     :param df: 包含 'high', 'low', 'close' 的 DataFrame
     :param length: ADX/DI 计算周期 (默认 14)
-    :param threshold: ADX 阈值 (默认 20)
+    :param threshold: ADX 阈值 (默认 25)
     :return:
           code        date   open   high    low  close      volume        amount   adx_plus  adx_minus        adx
         600218  2024-02-04   7.81   7.90   7.69   7.80   6532800.0  5.111882e+07        NaN        NaN        NaN

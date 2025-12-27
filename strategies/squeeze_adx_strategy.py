@@ -45,7 +45,7 @@ def run_strategy(df, symbol):
         df = adx_di_indicator(df, length=14, threshold=25)
         last_adx = df.iloc[-1]
         adx_val = last_adx.get('adx')
-        if pd.isna(adx_val) or adx_val <= 20:
+        if pd.isna(adx_val) or adx_val <= 25:
             return None
 
         # 3.4 计算动能指标 (SQZ)
