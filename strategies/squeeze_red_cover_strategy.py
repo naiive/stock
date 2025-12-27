@@ -1,137 +1,118 @@
 # -*- coding: utf-8 -*-
 
-import pandas as pd
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
-
 
 def run_strategy(df, symbol, min_red_days=6, max_allowed_greens=2):
     """
-    TTM Squeeze 严苛形态筛选策略 (深度封装版)
+    TTM Squeeze 纯净挤压爆发策略 (严苛版)
 
-    该策略旨在捕获“弹簧效应”：
-    即股价经历了一段长时间（>=6天）的低波挤压蓄能，
-    且该蓄能区间紧跟在上一波上涨结束之后，
-    今日首次出现动能由负转正并释放的“起爆点”。
+    逻辑：
+    1. 当天 (T0)：动能值 > 0, 颜色为亮绿 (Lime), 状态为释放 (OFF/白点)。
+    2. 回溯过程：从昨日往前，必须全程为挤压状态 (ON/黑点)，绝对禁止出现释放 (OFF)。
+    3. 蓄能要求：ON状态下的红柱天数 >= 6，允许夹杂 0-2 天绿柱杂质。
+    4. 起始边界：回溯直到遇见第一个“绿色释放点 (OFF + Green/Lime)”。
     """
     try:
-        # --- 1. 数据预检查 ---
-        # 考虑到回溯至少6天+起始边界，数据量少于25根K线无法计算完整的形态
+        # 1. 基础数据安全性检查
         if df is None or len(df) < 25:
             return None
 
-        # --- 2. 指标计算 ---
-        # 调用底层函数计算 SQZ 指标。
-        # sqz_hcolor: 柱体颜色 (lime/green/red/maroon)
-        # sqz_status: 挤压状态 (ON:黑点/正在挤压, OFF:白点/动能释放)
-        # sqz_hvalue: 动能柱绝对值 (正数为多头，负数为多头衰减或空头)
+        # 2. 计算 SQZ 指标 (获取颜色、状态、动能值)
+        # 返回字段映射：sqz_hcolor (颜色), sqz_status (状态), sqz_hvalue (数值)
         df = squeeze_momentum_indicator(df)
 
-        # --- 3. 判定触发点 (T0/当天) ---
+        # 3. 【当天触发点判定 T0】
         last = df.iloc[-1]
+        curr_hval = last.get('sqz_hvalue', 0)
         curr_color = last.get('sqz_hcolor')
         curr_status = last.get('sqz_status')
 
-        # 需求点：当天必须是亮绿柱(lime)且处于释放状态(OFF)
-        # 逻辑含义：能量积攒到临界点，今天正式向上“破局”释放
-        if not (curr_color == 'lime' and curr_status == 'OFF'):
+        # 严苛触发：动能必须站上0轴 且 为亮绿色 且 为首日OFF释放
+        if not (curr_hval > 0 and curr_color == 'lime' and curr_status == 'OFF'):
             return None
 
-        # --- 4. 核心变量初始化 ---
-        red_on_days = 0  # 累计在挤压状态(ON)下的红色/暗红色天数
-        green_on_days = 0  # 累计在挤压状态(ON)下的绿色/暗绿色天数 (作为干扰杂质统计)
-        momentum_sum = 0.0  # 统计挤压期间所有动能柱的数值总和，用于量化蓄能厚度
-        total_back_span = 0  # 统计从今天到回溯起点的总日历天数
-        found_origin = False  # 逻辑开关：是否成功定位到“上一波上涨的终点”
-        origin_idx = -1  # 记录回溯终点的索引位置，用于后续计算区间跌幅
+        # 4. 初始化回溯计数变量
+        red_on_days = 0  # 统计挤压状态下的红柱
+        green_on_days = 0  # 统计挤压状态下的绿柱
+        momentum_sum = 0.0  # 能量池累加值
+        total_back_span = 0  # 统计总天数
+        found_origin = False
+        origin_idx = -1
 
-        # --- 5. 动态回溯判定逻辑 (从 T-1 往前找) ---
-        # 循环从昨天(index -2)开始，一直往历史方向探测
+        # 5. 【严苛回溯过程判定】 (从 T-1 倒序往历史回溯)
         for i in range(2, len(df)):
             bar = df.iloc[-i]
             b_color = bar.get('sqz_hcolor')
             b_status = bar.get('sqz_status')
             b_val = bar.get('sqz_hvalue', 0)
 
-            # A. 判定边界条件 (Boundary Condition)
-            # 需求点：遇到第一个【OFF释放】且颜色为【绿色系】时停止回溯
-            # 逻辑含义：这代表我们找到了本轮调整之前的“那一波上涨的末尾”
+            # --- A. 结束边界判定 ---
+            # 遇见第一个“绿色释放点”则视为找到了蓄能周期的起点
             if b_status == 'OFF' and b_color in ['green', 'lime']:
                 found_origin = True
                 origin_idx = len(df) - i
                 break
 
-            # B. 过程统计
+            # --- B. 严苛状态过滤 ---
+            # 需求：除了起始边界点，中间回溯过程必须全部是 ON (黑点)
+            # 一旦发现 OFF 释放点，该形态被视为不够纯净，直接剔除
+            if b_status == 'OFF':
+                return None
+
+                # --- C. 数据统计 (此时 b_status 确定为 ON) ---
             total_back_span += 1
-            momentum_sum += b_val  # 持续累加动能值，负值越小代表调整越深
+            momentum_sum += b_val  # 累加蓄能期间的动能
 
-            # C. 统计挤压期(ON)内的颜色分布
-            if b_status == 'ON':
-                if b_color in ['maroon', 'red']:
-                    red_on_days += 1
-                elif b_color in ['green', 'lime']:
-                    green_on_days += 1
-
-                # 容错机制：如果挤压期内出现的绿色天数超过 2 天，说明调整不纯粹，直接剔除
+            if b_color in ['maroon', 'red']:
+                red_on_days += 1
+            elif b_color in ['green', 'lime']:
+                green_on_days += 1
+                # 绿色杂质超过2天则形态不合格
                 if green_on_days > max_allowed_greens:
                     return None
-            else:
-                # 如果遇到红色/暗红色的 OFF 释放，通常代表下跌加速，我们选择“穿透”它继续往回找
-                continue
 
-        # --- 6. 最终形态符合性校验 ---
-        # 必须满足两个硬性指标：
-        # 1. 成功回溯到了绿色起点 (确保不是在阴跌泥潭中)
-        # 2. 蓄能红柱天数必须达标 (确保蓄力足够久)
+        # 6. 【形态达标校验】
+        # 必须找到绿色起点，且红柱蓄能时间达到 6 天及以上
         if not found_origin or red_on_days < min_red_days:
             return None
 
-        # --- 7. 涨幅与能量维度计算 ---
-        # 计算当日涨幅：今天的收盘价相对于昨天的变化
+        # 7. 【量价维度计算】
+        # 当日涨幅计算
         prev_close = df['close'].iloc[-2]
         curr_close = last['close']
         daily_change = ((curr_close - prev_close) / prev_close) * 100
 
-        # 计算区间涨跌幅：从回溯起点价格到爆发前一天的价格
-        # 逻辑含义：判断蓄能期是“横盘强势震荡”还是“向下深幅回调”
+        # 区间蓄能期涨跌幅计算 (从边界点到爆发前一日)
         origin_price = df['close'].iloc[origin_idx]
         before_breakout_price = df['close'].iloc[-2]
         period_change = ((before_breakout_price - origin_price) / origin_price) * 100
 
-        # --- 8. 形态综合评分逻辑 (1-5星) ---
-        score = 1
-        if red_on_days >= 8: score += 1  # 挤压超过8天，属于“长程蓄力”，加1星
-        if -3 < period_change < 1:
-            score += 2  # 股价在高位横着走，极度强势，加2星
-        elif period_change > 1:
-            score += 1  # 边涨边挤压，也属于强势，加1星
-        if momentum_sum > -0.2: score += 1  # 动能柱虽然是红的但很浅，说明空头极弱，加1星
-
-        # --- 9. 详细结果输出封装 ---
+        # 8. 【终极结果封装】
         return {
             "日期": str(last.get('date')),
             "代码": symbol,
-            "当前价": round(float(curr_close), 2),
-            "涨幅(%)": f"{round(daily_change, 2)}%",
-            "形态综合评分": "★" * min(score, 5),
-            "蓄能质量分析": {
-                "红色挤压天数": f"{red_on_days}天",
-                "绿色杂质天数": f"{green_on_days}天",
-                "回溯总长度": f"{total_back_span}天",
-                "区间涨跌幅(%)": f"{round(period_change, 2)}%",
-                "能量池累加值": round(momentum_sum, 4),  # 越接近0说明压制越轻
-                "单日平均动能": round(momentum_sum / total_back_span, 4)
+            "现价": round(float(curr_close), 2),
+            "涨幅(%)": round(daily_change, 2),
+            "今日动能值": round(curr_hval, 4),
+            "蓄能形态质量": {
+                "状态校验": "全程纯净 ON 挤压",
+                "红柱蓄能天数": f"{red_on_days}天",
+                "绿柱干扰天数": f"{green_on_days}天",
+                "区间价格变动(%)": round(period_change, 2),
+                "蓄能池总量": round(momentum_sum, 4),
+                "平均动能压制": round(momentum_sum / total_back_span, 4) if total_back_span > 0 else 0
             },
-            "逻辑判定细节": {
-                "今日状态": "亮绿动能释放 (Lime OFF)",
-                "边界点日期": str(df['date'].iloc[origin_idx]),
-                "边界点状态": "前序多头释放终点 (Confirmed)"
-            },
-            "实战建议": (
-                "【极强形态】属于高位横盘后二次起爆，胜率较高" if score >= 4 else
-                "【标准形态】回踩洗盘后的正常转势信号" if score >= 2 else
-                "【弱势信号】动能偏弱，建议观察是否有成交量配合"
-            )
+            "形态评分": self_define_score(daily_change, period_change, red_on_days),
+            "交易语义": f"该股经历 {total_back_span} 天纯黑点挤压后，今日动能站上0轴并首次变绿释放。"
         }
 
-    except Exception as e:
+    except Exception:
         return None
+
+def self_define_score(daily_change, period_change, red_days):
+    """辅助评分函数：根据形态质量给出星级"""
+    score = 1
+    if red_days >= 10: score += 1  # 蓄能时间长
+    if -3 < period_change < 2: score += 2  # 横盘抗跌最强
+    if daily_change > 3: score += 1  # 爆发力度强
+    return "★" * min(score, 5)
