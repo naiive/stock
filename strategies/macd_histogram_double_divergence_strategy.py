@@ -47,8 +47,8 @@ def run_strategy(df, symbol):
                 "代码": symbol,
                 "当前价": round(current_close, 2),
                 "涨幅(%)": round(pct_chg, 2),
-                "左波峰日期": macd_l_date,
-                "右波峰日期": macd_r_date,
+                "左波峰日期": str(macd_l_date),
+                "右波峰日期": str(macd_r_date),
                 "建议止损价": round(last_atr.get('atr_long_stop'), 2)
             }
 

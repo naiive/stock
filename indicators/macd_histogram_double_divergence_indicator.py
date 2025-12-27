@@ -19,25 +19,20 @@ def macd_histogram_double_divergence_indicator(
     """
     MACD Histogram 双底背离（严格形态学定义）
     信号记录在“确认完成的那根 K 线收盘”
-
-    date        code   open   high    low  close      volume       amount      macd    signal    hist  min_threshold macd_bull macd_l_date  macd_l_hist macd_r_date  macd_r_hist
-    2022-10-13  002352  42.19  42.98  42.06  42.51  11500925.0  527004904.0 -1.167078 -0.951134 -0.2159       0.065074       Yes   2022-09-26       -0.3252   2022-10-11       -0.2529
-    2023-03-09  002352  49.59  49.77  48.70  48.84  10725106.0  566835128.0 -1.353248 -1.180551 -0.1727       0.104108       Yes   2023-02-17       -0.6060   2023-03-07       -0.1876
-    2023-06-02  002352  44.45  45.70  44.40  45.47  12603658.0  609825139.0 -1.888747 -1.790827 -0.0979       0.094730       Yes   2023-05-12       -0.7056   2023-05-31       -0.2335
-    2023-09-25  002352  38.22  38.22  37.61  37.77  18921624.0  765691355.0 -1.692218 -1.518574 -0.1736       0.097649       Yes   2023-08-25       -0.5294   2023-09-21       -0.2181
-    2024-12-09  002352  39.76  40.38  39.44  40.00  19787895.0  808077051.0 -0.258906  0.100025 -0.3589       0.094894       Yes   2024-11-22       -0.6094   2024-12-05       -0.4587
-    2024-12-20  002352  39.92  40.14  39.44  39.44  19051703.0  772512443.0 -0.351906 -0.232028 -0.1199       0.091168       Yes   2024-12-05       -0.4587   2024-12-18       -0.1725
     """
 
     # ─────────────────────
     # 0. 数据准备
     # ─────────────────────
     df = df.copy()
-
     df.columns = [c.lower() for c in df.columns]
-    required_cols = {'open', 'high', 'low', 'close'}
+
+    required_cols = {'open', 'high', 'low', 'close', 'date'}
     if not required_cols.issubset(df.columns):
         raise ValueError(f"DataFrame 必须包含列: {required_cols}")
+
+    # 统一日期格式（保证输出是日期而不是序号）
+    df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
 
     # ─────────────────────
     # 1. MACD 计算
@@ -69,7 +64,7 @@ def macd_histogram_double_divergence_indicator(
 
     hist_vals = df['hist'].values
     low_vals = df['low'].values
-    date_vals = df.index.values
+    date_vals = df['date'].values          # ✅ 关键修复点
     thr_vals = df['min_threshold'].values
 
     n = len(df)
@@ -79,14 +74,14 @@ def macd_histogram_double_divergence_indicator(
     # ─────────────────────
     for i in range(n):
 
-        # ---- 绿柱计数（严格等价 Pine 语义） ----
+        # ---- 绿柱计数（严格 Pine 语义） ----
         if hist_vals[i] > 0:
             green_count += 1
         else:
             if left_peak is None:
                 green_count = 0
 
-        # ---- 物理熔断 ----
+        # ---- 熔断 ----
         if green_count > max_green:
             left_peak = None
 
@@ -95,7 +90,7 @@ def macd_histogram_double_divergence_indicator(
         if detect_idx < lb_left:
             continue
 
-        # ---- checkPeak：严格极值 ----
+        # ---- 严格极小值（双底） ----
         center_h = hist_vals[detect_idx]
         is_peak = False
 
@@ -107,7 +102,7 @@ def macd_histogram_double_divergence_indicator(
                 if abs(center_h) >= thr_vals[detect_idx]:
                     is_peak = True
 
-        # ---- 波峰匹配逻辑 ----
+        # ---- 双坑匹配 ----
         if is_peak:
             curr_h = center_h
             curr_l = low_vals[detect_idx]
@@ -124,13 +119,13 @@ def macd_histogram_double_divergence_indicator(
                 price_ok = curr_l <= prev_l
                 energy_ok = curr_h > prev_h   # 右坑更浅
 
-                # ✅ 信号写在“确认完成的当前 K 线 i”
+                # ✅ 信号写在确认完成的当前 K 线 i
                 if ratio_ok and price_ok and energy_ok:
-                    df.iloc[i, df.columns.get_loc('macd_bull')] = 'Yes'
-                    df.iloc[i, df.columns.get_loc('macd_l_date')] = prev_d
-                    df.iloc[i, df.columns.get_loc('macd_l_hist')] = prev_h
-                    df.iloc[i, df.columns.get_loc('macd_r_date')] = curr_d
-                    df.iloc[i, df.columns.get_loc('macd_r_hist')] = curr_h
+                    df.at[i, 'macd_bull'] = 'Yes'
+                    df.at[i, 'macd_l_date'] = prev_d
+                    df.at[i, 'macd_l_hist'] = prev_h
+                    df.at[i, 'macd_r_date'] = curr_d
+                    df.at[i, 'macd_r_hist'] = curr_h
 
                 # 滑动窗口
                 left_peak = (detect_idx, curr_h, curr_l, curr_d)
