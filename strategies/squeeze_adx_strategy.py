@@ -12,7 +12,7 @@ def run_strategy(df, symbol):
     策略：
          涨幅 => 正的
          EMA200 => 价格站在均线上
-         ADX => 大于20
+         ADX => 大于25
          SQZMOM挤压释放 => 至少6天挤压，当天释放，且是亮绿动能柱
          ATR Stop Loss
 
@@ -41,8 +41,8 @@ def run_strategy(df, symbol):
         if current_close <= ema200_series.iloc[-1]:
             return None
 
-        # 3.3 ADX > 20
-        df = adx_di_indicator(df, length=14, threshold=20)
+        # 3.3 ADX > 25
+        df = adx_di_indicator(df, length=14, threshold=25)
         last_adx = df.iloc[-1]
         adx_val = last_adx.get('adx')
         if pd.isna(adx_val) or adx_val <= 20:

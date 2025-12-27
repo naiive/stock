@@ -36,7 +36,7 @@ def wilder_smoothing(series, length):
 def adx_di_indicator(
         df: pd.DataFrame,
         length: int = 14,
-        threshold: int = 20
+        threshold: int = 25
 ) -> pd.DataFrame:
     """
     计算 ADX, +DI, -DI 指标
