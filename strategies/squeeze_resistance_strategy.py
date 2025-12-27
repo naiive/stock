@@ -98,6 +98,15 @@ def run_strategy(df, symbol):
             # 计算 "得分" (低为 1 分，高为 0 分)
             score = status_D1 + status_D2 + status_D3
 
+            # iloc[-7:-1] 表示从倒数第7个开始，到倒数第2个结束（不含倒数第1个）
+            pre_signal_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()
+            color_parts = []
+            for i in range(6):
+                # pre_signal_colors 的最后一个元素是昨天
+                color_val = pre_signal_colors[-(i + 1)]
+                color_parts.append(f"前{i + 1}日:{color_val}")
+
+            color_str = " | ".join(color_parts)
 
             return {
                 "日期": trade_date,
@@ -108,6 +117,7 @@ def run_strategy(df, symbol):
                 # 规则：收盘价 > 前阻力位价格 (srb_resistance) -> "高"；否则 "低"
                 # 顺序：倒数第4天-倒数第3天-倒数第2天
                 "突破趋势": break_trend,
+                "信号前6日颜色": color_str,
                 "EMA200": round(ema200_series.iloc[-1], 2),
                 "前高": round(srb_resistance, 2),
                 "建议止损价": round(last_atr.get('atr_long_stop'), 2)
