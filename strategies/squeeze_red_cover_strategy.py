@@ -108,13 +108,11 @@ def run_strategy(df, symbol, min_red_days=6, max_allowed_greens=2):
 
         # --- 9. 详细结果输出封装 ---
         return {
-            "核心数据": {
-                "代码": symbol,
-                "分析日期": str(last.get('date')),
-                "当前价": round(float(curr_close), 2),
-                "涨幅(%)": f"{round(daily_change, 2)}%",
-                "形态综合评分": "★" * min(score, 5)
-            },
+            "日期": str(last.get('date')),
+            "代码": symbol,
+            "当前价": round(float(curr_close), 2),
+            "涨幅(%)": f"{round(daily_change, 2)}%",
+            "形态综合评分": "★" * min(score, 5),
             "蓄能质量分析": {
                 "红色挤压天数": f"{red_on_days}天",
                 "绿色杂质天数": f"{green_on_days}天",
