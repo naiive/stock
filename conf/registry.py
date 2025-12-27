@@ -8,7 +8,8 @@ from strategies import (
     squeeze_adx_strategy,
     squeeze_maroon_strategy,
     squeeze_divergence_strategy,
-    fair_value_gap_strategy
+    fair_value_gap_strategy,
+    macd_histogram_double_divergence_strategy
 )
 
 STRATEGY_REGISTRY = {
@@ -19,4 +20,5 @@ STRATEGY_REGISTRY = {
     "squeeze_maroon": squeeze_maroon_strategy.run_strategy,
     "squeeze_divergence": squeeze_divergence_strategy.run_strategy,
     "fvg": fair_value_gap_strategy.run_strategy,
+    "macd_histogram_double_divergence": macd_histogram_double_divergence_strategy.run_strategy
 }
