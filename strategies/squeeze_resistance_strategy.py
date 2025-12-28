@@ -6,27 +6,6 @@ from indicators.atr_indicator import atr_indicator
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 from indicators.support_resistance_breaks_indicator import support_resistance_breaks_indicator
 
-
-# ==================================================
-# SQZMOM 颜色映射（统一成四种）
-# ==================================================
-COLOR_MAP = {
-    'lime': '绿|亮',     # 强多头动能
-    'green': '绿|暗',    # 弱多头动能
-    'red': '红|亮',      # 弱空头动能
-    'maroon': '红|暗'    # 强空头动能（深度压缩）
-}
-
-# ==================================================
-# SQZ 颜色评分系数（红色权重大）
-# ==================================================
-COLOR_SCORE = {
-    '红|暗': 1.0,
-    '红|亮': 0.8,
-    '绿|暗': 0.3,
-    '绿|亮': 0.1
-}
-
 def run_strategy(df, symbol):
     """
     A股全市场扫描策略
@@ -187,3 +166,23 @@ def run_strategy(df, symbol):
 
     except Exception:
         return None
+
+# ==================================================
+# SQZMOM 颜色映射（统一成四种）
+# ==================================================
+COLOR_MAP = {
+    'lime': '绿|亮',     # 强多头动能
+    'green': '绿|暗',    # 弱多头动能
+    'red': '红|亮',      # 强空头动能
+    'maroon': '红|暗'    # 弱空头动能
+}
+
+# ==================================================
+# SQZ 颜色评分系数（红色权重大）
+# ==================================================
+COLOR_SCORE = {
+    '红|暗': 1.0,
+    '红|亮': 0.8,
+    '绿|暗': 0.3,
+    '绿|亮': 0.1
+}
