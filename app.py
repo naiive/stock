@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Module: main.py
+Module: app.py
 Description: 量化交易系统的启动入口。
 职责：
 1. 建立基础环境（日志、计时、异常捕获）。
