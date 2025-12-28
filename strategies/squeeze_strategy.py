@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 
 import pandas as pd
 from indicators.atr_indicator import atr_indicator
@@ -6,31 +7,13 @@ from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 from indicators.adx_di_indicator import adx_di_indicator
 from indicators.support_resistance_breaks_indicator import support_resistance_breaks_indicator
 
-# ==================================================
-# SQZMOM 颜色映射
-# ==================================================
-COLOR_MAP = {
-    'lime': '绿|亮',    # 强多头动能
-    'green': '绿|暗',   # 弱多头动能
-    'red': '红|亮',     # 弱空头动能
-    'maroon': '红|暗'   # 强空头动能
-}
-
-# SQZMOM 颜色评分系数（红色权重大，靠近信号日权重大）
-COLOR_SCORE = {
-    '红|暗': 1.0,
-    '红|亮': 0.8,
-    '绿|暗': 0.3,
-    '绿|亮': 0.1
-}
-
 def run_strategy(
         df: pd.DataFrame,            # 股票历史行情数据，必须包含 'close'、'date' 等列
         symbol: str,                 # 股票代码，用于返回结果标识
         adx_length: int = 14,        # ADX 指标计算周期长度，整数，默认14
         adx_threshold: float = 25,   # ADX 命中阈值，超过此值且 +DI > -DI 则认为趋势成立
         atr_multiplier: float = 1.5  # ATR 动态止损倍数，float，默认1.5
-) -> dict | None:                    # 返回字典，包含命中信息和指标数据；未命中返回 None
+):
     """
     综合扫描策略：
     1️⃣ SQZMOM 挤压释放（大前提）
@@ -123,11 +106,11 @@ def run_strategy(
         adx_hit = adx_val >= adx_threshold and plus_di > minus_di  # 命中条件
 
         if adx_hit:
-            result["ADX命中"] = {
+            result["ADX命中"] = json.dumps({
                 "ADX": adx_val,    # ADX 强度
                 "+DI": plus_di,    # 多方趋势指标
                 "-DI": minus_di    # 空方趋势指标
-            }
+            }, ensure_ascii=False)
 
         # -----------------------------
         # 5️⃣ 前高突破（SRB）
@@ -152,12 +135,12 @@ def run_strategy(
             break_trend = f"{trend_D1}-{trend_D2}-{trend_D3}"     # 趋势字符串
             break_score = int(status_D1 + status_D2 + status_D3)  # 趋势得分
 
-            result["RESISTANCE策略命中"] = {
+            result["RESISTANCE策略命中"] = json.dumps({
                 "突破趋势": break_trend,
                 "突破得分": break_score,
                 "EMA200": ema200_val,
                 "前高": srb_resistance
-            }
+            }, ensure_ascii=False)
 
         # -----------------------------
         # 6️⃣ ATR 止损
@@ -171,3 +154,25 @@ def run_strategy(
 
     except Exception:
         return None
+
+
+# ==================================================
+# SQZMOM 颜色映射
+# ==================================================
+COLOR_MAP = {
+    'lime':   '绿|亮',    # 强多头动能
+    'green':  '绿|暗',    # 弱多头动能
+    'red':    '红|亮',    # 弱空头动能
+    'maroon': '红|暗'     # 强空头动能
+}
+
+
+# ==================================================
+# SQZMOM 颜色评分系数（红色权重大，靠近信号日权重大）
+# ==================================================
+COLOR_SCORE = {
+    '红|暗': 1.0,
+    '红|亮': 0.8,
+    '绿|暗': 0.3,
+    '绿|亮': 0.1
+}
