@@ -106,7 +106,7 @@ def run_strategy(
         adx_hit = adx_val >= adx_threshold and plus_di > minus_di  # 命中条件
 
         if adx_hit:
-            result["ADX命中"] = json.dumps({
+            result["SQUEEZE_ADX策略命中"] = json.dumps({
                 "ADX": adx_val,    # ADX 强度
                 "+DI": plus_di,    # 多方趋势指标
                 "-DI": minus_di    # 空方趋势指标
@@ -135,7 +135,7 @@ def run_strategy(
             break_trend = f"{trend_D1}-{trend_D2}-{trend_D3}"     # 趋势字符串
             break_score = int(status_D1 + status_D2 + status_D3)  # 趋势得分
 
-            result["RESISTANCE策略命中"] = json.dumps({
+            result["SQUEEZE_RESISTANCE策略命中"] = json.dumps({
                 "突破趋势": break_trend,
                 "突破得分": break_score,
                 "EMA200": ema200_val,
