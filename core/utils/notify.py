@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-通知工具集：邮件与 Telegram 推送
-
-- send_email: 通过 SMTP 发送文本 + 可选附件（CSV 报告）。
-- send_telegram: 通过 Telegram Bot API 发送文本消息；如可用则尝试发送文档。
-- post_export_notify: 对外统一接口；封装主题/正文构建与渠道分发逻辑。
-
-使用：在 engine/market_scanner.py 导出 CSV 后只需调用 `post_export_notify(file_path, df)`。
+通知工具集：邮件与 Telegram 推送（改进版）
+- 自动适配不固定列
+- JSON / 字典列自动格式化
+- Telegram 消息美化显示
 """
+
 from __future__ import annotations
 
 import os
@@ -25,13 +23,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email import encoders
 
-from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG,PATH_CONFIG, STRATEGY_CONFIG
-
+from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG, PATH_CONFIG, STRATEGY_CONFIG
 
 # =====================================================
 # Email
 # =====================================================
-
 def send_email(
     smtp_host: str,
     smtp_port: int,
@@ -49,7 +45,6 @@ def send_email(
         msg["From"] = sender
         msg["To"] = ", ".join([x for x in to_list if x])
         msg["Subject"] = subject
-
         msg.attach(MIMEText(body, "plain", "utf-8"))
 
         if attachment_path and os.path.exists(attachment_path):
@@ -86,17 +81,14 @@ def send_email(
         print(f"⚠️ Email failed: {e}")
         return False
 
-
 # =====================================================
 # Telegram HTTP
 # =====================================================
-
 def _http_post_form(url: str, data: dict) -> dict:
     encoded = urllib.parse.urlencode(data).encode("utf-8")
     req = urllib.request.Request(url, data=encoded)
     with urllib.request.urlopen(req, timeout=20) as resp:
         return json.loads(resp.read().decode("utf-8"))
-
 
 def send_telegram(
     bot_token: str,
@@ -120,18 +112,35 @@ def send_telegram(
         print(f"⚠️ Telegram failed: {e}")
         return False
 
+# =====================================================
+# JSON / dict 格式化工具
+# =====================================================
+def format_dict_or_json(val) -> str:
+    if isinstance(val, dict):
+        return " | ".join([f"{k}:{v}" for k, v in val.items()])
+    elif isinstance(val, str):
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, dict):
+                return " | ".join([f"{k}:{v}" for k, v in parsed.items()])
+            elif isinstance(parsed, list):
+                return ", ".join([str(x) for x in parsed])
+            else:
+                return str(parsed)
+        except Exception:
+            return val
+    else:
+        return str(val)
 
 # =====================================================
-# Unified message builder (CORE)
+# Unified message builder
 # =====================================================
-
 def build_unified_message(
     df: Optional[pd.DataFrame],
     file_path: Optional[str],
     max_rows: int = 8,
 ) -> Tuple[str, str]:
     hit_cnt = int(len(df)) if isinstance(df, pd.DataFrame) else 0
-
     title = f"📈 扫描完成：{hit_cnt} 条信号"
 
     lines = [
@@ -142,30 +151,52 @@ def build_unified_message(
     ]
 
     if isinstance(df, pd.DataFrame) and not df.empty:
-        cols = list(df.columns)
         for _, row in df.head(max_rows).iterrows():
-            parts = [f"{col}:{row[col]}" for col in cols]
-            lines.append(" | ".join(parts))
+            # 标题行：名称 + 代码
+            name_code = f"🔹 {row.get('名称','')} ({row.get('代码','')})"
+            lines.append(name_code)
+
+            for col in row.index:
+                if col in ["名称", "代码"]:
+                    continue
+                val_str = format_dict_or_json(row[col])
+                # 关键字段加 Emoji
+                if "价" in col or "当前" in col:
+                    lines.append(f"💰 {col}: {val_str}")
+                elif "涨幅" in col:
+                    lines.append(f"📈 {col}: {val_str}%")
+                elif "SQZ" in col or "评分" in col:
+                    lines.append(f"🎯 {col}: {val_str}")
+                elif "止损" in col:
+                    lines.append(f"⚠️ {col}: {val_str}")
+                elif "ADX" in col:
+                    lines.append(f"📊 {col}: {val_str}")
+                elif "市值" in col:
+                    lines.append(f"🏦 {col}: {val_str} 亿")
+                elif "换手率" in col:
+                    lines.append(f"🔄 {col}: {val_str}%")
+                else:
+                    lines.append(f"{col}: {val_str}")
+
+            lines.append("")  # 每条策略间空行
     else:
         lines.append("（无信号数据）")
 
     return title, "\n".join(lines)
 
-
 def clip_for_telegram(text: str, limit: int = 3800) -> str:
     return text if len(text) <= limit else text[:limit] + "\n...（已截断）"
-
 
 # =====================================================
 # Public notify entry
 # =====================================================
-
 def post_export_notify(
     file_path: Optional[str],
     df: Optional[pd.DataFrame],
 ) -> None:
     try:
         title, body = build_unified_message(df, file_path)
+        tg_text = clip_for_telegram(f"{title}\n\n{body}")
 
         # ---------- Email ----------
         if SYSTEM_CONFIG.get("ENABLE_EMAIL"):
@@ -184,7 +215,6 @@ def post_export_notify(
 
         # ---------- Telegram ----------
         if SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
-            tg_text = clip_for_telegram(f"{title}\n\n{body}")
             send_telegram(
                 bot_token=TELEGRAM_CONFIG.get("BOT_TOKEN", ""),
                 chat_id=str(TELEGRAM_CONFIG.get("CHAT_ID", "")).strip(),
@@ -197,50 +227,31 @@ def post_export_notify(
     except Exception as e:
         print(f"⚠️ Notify failed: {e}")
 
-
 # =====================================================
-# scv 落盘
+# CSV 导出 + 通知接口
 # =====================================================
 def export_and_notify(df: Optional[pd.DataFrame]) -> Optional[str]:
-    """
-    对外统一导出+通知接口：
-    - 根据 SYSTEM_CONFIG['ENABLE_EXPORT'] 决定是否写入 CSV；
-    - 始终尝试发送通知（若开启相关开关）。
-
-    Args:
-        df: 待导出的 DataFrame。
-    Returns:
-        file_path: 实际写入的 CSV 路径；若未写入则为 None。
-    """
     file_path: Optional[str] = None
     try:
-        # 是否需要实际导出 CSV
         if SYSTEM_CONFIG.get("ENABLE_EXPORT", True):
             import time
             date_str = time.strftime('%Y%m%d')
             save_dir = os.path.join(PATH_CONFIG["OUTPUT_FOLDER_BASE"], date_str)
-            if not os.path.exists(save_dir):
-                os.makedirs(save_dir)
-            # 策略名称前缀
-            strategy_name = STRATEGY_CONFIG.get("RUN_STRATEGY")
+            os.makedirs(save_dir, exist_ok=True)
+            strategy_name = STRATEGY_CONFIG.get("RUN_STRATEGY", "strategy")
             file_path = os.path.join(save_dir, f"{strategy_name}_{time.strftime('%H%M%S')}.csv")
             encoding = SYSTEM_CONFIG.get("EXPORT_ENCODING", "utf-8-sig")
-
             if isinstance(df, pd.DataFrame):
                 df.to_csv(file_path, index=False, encoding=encoding)
             else:
-                # 兜底：创建空文件占位，便于定位
-                with open(file_path, 'w', encoding=encoding) as f:
+                with open(file_path, "w", encoding=encoding) as f:
                     f.write("")
-
             print(f"\n🎉 导出成功！文件路径: {file_path}")
         else:
-            print("ℹ️ [系统] 已关闭导出开关（ENABLE_EXPORT=False），将跳过 CSV 落盘，仅发送通知...")
+            print("ℹ️ 已关闭导出开关（ENABLE_EXPORT=False），仅发送通知...")
     except Exception as e:
         print(f"⚠️ 导出 CSV 失败：{e}")
-        # 出错也继续走通知流程，方便运维感知
 
-    # 统一通知
     try:
         post_export_notify(file_path=file_path, df=df)
     except Exception as e:
