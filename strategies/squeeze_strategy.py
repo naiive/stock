@@ -7,6 +7,19 @@ from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 from indicators.adx_di_indicator import adx_di_indicator
 from indicators.support_resistance_breaks_indicator import support_resistance_breaks_indicator
 
+"""
+***************************************************************************
+***************************************************************************
+使用说明：综合判断
+1.看之前黑色挤压点ON是否连续
+2.看之前黑色挤压点ON对应的K线是否涨【特别是最近的暗红色柱状图】，如果涨就是提前释放了涨幅
+3.看之前黑色挤压点ON是否多，越挤压动能释放越大
+4.看当前释放OFF点前几天的是否有多个绿色的柱状图，避免提前释放涨幅
+5.看Price Action、 Value Price、压力位、FVG、ADX、EMA200之类的
+***************************************************************************
+***************************************************************************
+"""
+
 def run_strategy(
         df: pd.DataFrame,            # 股票历史行情数据，必须包含 'close'、'date' 等列
         symbol: str,                 # 股票代码，用于返回结果标识
