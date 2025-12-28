@@ -1,0 +1,117 @@
+//@version=6
+indicator("MACD Histogram Double Bottom Divergence [Beluga]", overlay = false)
+
+// ─────────────────────
+// 1. 参数配置
+// ─────────────────────
+grp_macd = "MACD 核心设置"
+fastLen    = input.int(13, "MACD 快线长度", group = grp_macd)
+slowLen    = input.int(34, "MACD 慢线长度", group = grp_macd)
+signalLen  = input.int(9,  "MACD 信号线长度", group = grp_macd)
+
+grp_vis = "显示设置"
+showLines  = input.bool(false, "显示 MACD/信号线", group = grp_vis)
+
+grp_div = "背离检测参数"
+lbLeft     = input.int(2,   "左侧回溯数量", minval = 1, group = grp_div)
+lbRight    = input.int(2,   "右侧回溯数量", minval = 1, group = grp_div)
+sizeFactor = input.float(0.1, "波峰最小高度乘数", step = 0.1, group = grp_div)
+sizeRatio  = input.float(1.2, "波峰大小差异比例", step = 0.1, group = grp_div)
+maxGreen   = input.int(0,   "允许最大绿柱数量", minval = 0, group = grp_div)
+
+// ─────────────────────
+// 2. MACD 计算
+// ─────────────────────
+[macd, sig, rawHist] = ta.macd(close, fastLen, slowLen, signalLen)
+hist = math.round(rawHist, 4)
+
+// 绘制 MACD 线和信号线 (默认不显示，用户可在设置中开启)
+plot(showLines ? macd : na, color = color.blue, title = "MACD Line")
+plot(showLines ? sig : na, color = color.orange, title = "Signal Line")
+
+// 动态门槛：基于信号线平均值，过滤极小波动
+minThreshold = ta.sma(math.abs(sig), 100) * sizeFactor
+
+// 四色柱逻辑 (亮红代表动能增强/绝对值增大)
+color hColor = hist >= 0 ? (hist > hist[1] ? #26a69a : color.new(#26a69a, 60)) : (hist < hist[1] ? #ef5350 : color.new(#ef5350, 60))
+plot(hist, style = plot.style_columns, color = hColor, title = "MACD Histogram")
+hline(0, color = color.gray, linestyle = hline.style_dotted)
+
+// ─────────────────────
+// 3. 状态存储与绿柱计数
+// ─────────────────────
+var float leftH  = na
+var float leftP  = na
+var int   leftB  = na
+var int   greenCount = 0
+
+// 绿柱计数逻辑：用于检测两凹槽之间是否穿过零轴过多
+if hist > 0
+    greenCount := greenCount + 1
+else
+    if na(leftH)
+        greenCount := 0
+
+// 物理熔断：如果中间绿柱太多，说明结构已破坏
+if greenCount > maxGreen
+    leftH := na
+    leftP := na
+    leftB := na
+
+// ─────────────────────
+// 4. 形态检测函数
+// ─────────────────────
+checkPeak(idx) =>
+    bool ok = true
+    float centerVal = hist[idx]
+
+    if centerVal >= 0
+        ok := false
+    else
+        for i = 1 to lbLeft
+            if hist[idx + i] < centerVal
+                ok := false
+                break
+        if ok
+            for i = 1 to lbRight
+                if hist[idx - i] < centerVal
+                    ok := false
+                    break
+        if ok and math.abs(centerVal) < minThreshold
+            ok := false
+    ok and centerVal < 0
+
+// ─────────────────────
+// 5. 探测与匹配逻辑
+// ─────────────────────
+detectIdx = lbRight
+
+if checkPeak(detectIdx)
+    curH = hist[detectIdx]
+    curP = low[detectIdx]
+    curB = bar_index - detectIdx
+
+    if na(leftH)
+        leftH := curH
+        leftP := curP
+        leftB := curB
+    else
+        // 背离核心逻辑：
+        // 1. ratioOk: 左坑深度 / 右坑深度 >= 比例 (左坑明显更深)
+        // 2. priceOk: 当前价格(Low) 低于或等于 左坑价格 (价格创新低)
+        // 3. energyOk: 当前坑的深度浅于左坑 (动能背离)
+        ratioOk  = math.abs(leftH / curH) >= sizeRatio
+        priceOk  = curP <= leftP
+        energyOk = curH > leftH
+
+        if ratioOk and priceOk and energyOk
+            line.new(leftB, leftH, curB, curH, color = color.lime, width = 2)
+            label.new(curB, curH, "Bull",
+                 style = label.style_label_up, color = color.new(#84ddb2, 20),
+                 textcolor = color.black, size = size.tiny)
+
+        // 滑动窗口更新
+        leftH := curH
+        leftP := curP
+        leftB := curB
+        greenCount := 0
