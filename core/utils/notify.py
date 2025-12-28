@@ -3,7 +3,7 @@
 通知工具集：邮件与 Telegram 推送（改进版）
 - 自动适配不固定列
 - JSON / 字典列自动格式化
-- Telegram 消息美化显示
+- Telegram 消息自动分批发送、支持大量行
 """
 
 from __future__ import annotations
@@ -145,7 +145,7 @@ def build_unified_message(
 
     lines = [
         f"时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
-        f"命中数量：{hit_cnt}",
+        f"命中：{hit_cnt}",
         f"文件：{os.path.basename(file_path) if file_path else '<未落盘>'}",
         "",
     ]
@@ -180,7 +180,7 @@ def build_unified_message(
                 elif "左波峰日期" in col:
                     lines.append(f"📅 {col}: {val_str}")
                 elif "右波峰日期" in col:
-                    lines.append(f"📅️ {col}: {val_str}")
+                    lines.append(f"⏰ {col}: {val_str}")
                 elif "EMA200" in col:
                     lines.append(f"📈 {col}: {val_str}")
 
@@ -207,13 +207,41 @@ def clip_for_telegram(text: str, limit: int = 3800) -> str:
 def post_export_notify(
     file_path: Optional[str],
     df: Optional[pd.DataFrame],
+    max_rows_per_msg: int = 8,
 ) -> None:
     try:
-        title, body = build_unified_message(df, file_path)
-        tg_text = clip_for_telegram(f"{title}\n\n{body}")
+        # Telegram 分批发送
+        if isinstance(df, pd.DataFrame) and not df.empty and SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
+            for start in range(0, len(df), max_rows_per_msg):
+                sub_df = df.iloc[start:start + max_rows_per_msg]
+                title, body = build_unified_message(sub_df, file_path)
+                tg_text = clip_for_telegram(f"{title}\n\n{body}")
 
-        # ---------- Email ----------
+                send_telegram(
+                    bot_token=TELEGRAM_CONFIG.get("BOT_TOKEN", ""),
+                    chat_id=str(TELEGRAM_CONFIG.get("CHAT_ID", "")).strip(),
+                    text=tg_text,
+                    disable_web_page_preview=bool(
+                        TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True)
+                    ),
+                )
+                time.sleep(1)  # 避免频率限制
+        elif SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
+            # 空 DataFrame 或 None
+            title, body = build_unified_message(df, file_path)
+            tg_text = clip_for_telegram(f"{title}\n\n{body}")
+            send_telegram(
+                bot_token=TELEGRAM_CONFIG.get("BOT_TOKEN", ""),
+                chat_id=str(TELEGRAM_CONFIG.get("CHAT_ID", "")).strip(),
+                text=tg_text,
+                disable_web_page_preview=bool(
+                    TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True)
+                ),
+            )
+
+        # Email 一次发送完整内容
         if SYSTEM_CONFIG.get("ENABLE_EMAIL"):
+            title, body = build_unified_message(df, file_path)
             send_email(
                 smtp_host=EMAIL_CONFIG.get("SMTP_HOST", ""),
                 smtp_port=int(EMAIL_CONFIG.get("SMTP_PORT", 465)),
@@ -227,17 +255,6 @@ def post_export_notify(
                 attachment_path=file_path,
             )
 
-        # ---------- Telegram ----------
-        if SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
-            send_telegram(
-                bot_token=TELEGRAM_CONFIG.get("BOT_TOKEN", ""),
-                chat_id=str(TELEGRAM_CONFIG.get("CHAT_ID", "")).strip(),
-                text=tg_text,
-                disable_web_page_preview=bool(
-                    TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True)
-                ),
-            )
-
     except Exception as e:
         print(f"⚠️ Notify failed: {e}")
 
@@ -248,7 +265,6 @@ def export_and_notify(df: Optional[pd.DataFrame]) -> Optional[str]:
     file_path: Optional[str] = None
     try:
         if SYSTEM_CONFIG.get("ENABLE_EXPORT", True):
-            import time
             date_str = time.strftime('%Y%m%d')
             save_dir = os.path.join(PATH_CONFIG["OUTPUT_FOLDER_BASE"], date_str)
             os.makedirs(save_dir, exist_ok=True)
