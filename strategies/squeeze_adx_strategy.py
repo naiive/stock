@@ -1,105 +1,179 @@
 # -*- coding: utf-8 -*-
+"""
+A股全市场扫描策略（含 SQZ 释放评分）
+
+核心思想：
+1. 大趋势向上（EMA200 + ADX）
+2. 波动被长期压缩（SQZ ON ≥ 6）
+3. 当天刚释放（ON → OFF）
+4. 第一根亮绿动能柱
+5. 用前 6 日柱状颜色给“释放质量”打分
+"""
 
 import pandas as pd
 
+# ADX + DI 指标（判断趋势强度）
 from indicators.adx_di_indicator import adx_di_indicator
+
+# ATR 指标（计算止损）
 from indicators.atr_indicator import atr_indicator
+
+# Squeeze Momentum（挤压释放核心指标）
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
+
+
+# ==================================================
+# SQZMOM 颜色映射（统一成四种）
+# ==================================================
+COLOR_MAP = {
+    'lime': '绿|亮',     # 强多头动能
+    'green': '绿|暗',    # 弱多头动能
+    'red': '红|亮',      # 弱空头动能
+    'maroon': '红|暗'    # 强空头动能（深度压缩）
+}
+
+# ==================================================
+# SQZ 颜色评分系数（红色权重大）
+# ==================================================
+COLOR_SCORE = {
+    '红|暗': 1.0,
+    '红|亮': 0.8,
+    '绿|暗': 0.3,
+    '绿|亮': 0.1
+}
 
 def run_strategy(df, symbol):
     """
-    A股全市场扫描策略
-    策略：
-         涨幅 => 正的
-         EMA200 => 价格站在均线上
-         ADX => 大于25
-         SQZMOM挤压释放 => 至少6天挤压，当天释放，且是亮绿动能柱
-         ATR Stop Loss
-         ************************************
-         注意：要看前几天的动能柱状图颜色，太多绿色柱状图，说明被提前释放了，风险有点大
-         ************************************
-    :param df: DataFrame
-    :param symbol: 股票代码
-    :return: 命中则返回字典，未命中返回 None
+    单股票扫描函数
+    命中返回 dict
+    未命中返回 None
     """
     try:
-        # 1. 基础数据量检查 (确保能支撑滚动计算)
+        # ==========================================================
+        # 1️⃣ 基础数据长度检查
+        # EMA200 / ADX / SQZ 都需要较长历史
+        # ==========================================================
         if df is None or len(df) < 220:
             return None
 
-        # 2. 价格与均线前置过滤 (快速剪枝，提升扫描速度)
+        # ==========================================================
+        # 2️⃣ 当日涨幅必须为正
+        # 避免选到刚释放但当日被砸的标的
+        # ==========================================================
         current_close = float(df['close'].iloc[-1])
         prev_close = float(df['close'].iloc[-2])
+
         pct_chg = (current_close - prev_close) / prev_close * 100
-
-        # 3. 策略计算，一定要断点，就是先把简单的指标计算，不满足就跳过后面复杂的计算
-
-        # 3.1 涨幅大于等于0
         if pct_chg <= 0:
             return None
 
-        # 3.2 价格在ema200上
-        ema200_series = df['close'].rolling(200).mean()
-        if current_close <= ema200_series.iloc[-1]:
+        # ==========================================================
+        # 3️⃣ 价格必须站在 EMA200 上
+        # 保证只在长期上升趋势中找机会
+        # ==========================================================
+        ema200 = df['close'].rolling(200).mean().iloc[-1]
+        if current_close <= ema200:
             return None
 
-        # 3.3 ADX > 25
+        # ==========================================================
+        # 4️⃣ ADX 趋势强度过滤
+        # ADX > 25 表示趋势明确
+        # ==========================================================
         df = adx_di_indicator(df, length=14, threshold=25)
-        last_adx = df.iloc[-1]
-        adx_val = last_adx.get('adx')
+        adx_val = df.iloc[-1].get('adx')
+
         if pd.isna(adx_val) or adx_val <= 25:
             return None
 
-        # 3.4 计算动能指标 (SQZ)
-        df = squeeze_momentum_indicator(df, lengthKC=20, multKC=1.5, useTrueRange=True)
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        prev_sqz_id = pd.to_numeric(prev['sqz_id'], errors='coerce')
+        # ==========================================================
+        # 5️⃣ 计算 SQZMOM（挤压动能）
+        # ==========================================================
+        df = squeeze_momentum_indicator(
+            df,
+            lengthKC=20,          # KC 周期
+            multKC=1.5,           # KC 倍数
+            useTrueRange=True
+        )
 
-        # 3.4.1 SQZ信号定义
-        sqz_status = last.get('sqz_status')
+        last = df.iloc[-1]       # 今天
+        prev = df.iloc[-2]       # 昨天
+
+        sqz_status = last.get('sqz_status')        # ON / OFF
         prev_status = prev.get('sqz_status')
-        sqz_hcolor = last.get('sqz_hcolor', '')
+        sqz_hcolor = last.get('sqz_hcolor')        # 动能柱颜色
+        prev_sqz_id = pd.to_numeric(
+            prev.get('sqz_id'),
+            errors='coerce'
+        )
 
-        # 3.4.2. SQZ逻辑判断
-        signal = "无"
-        if sqz_status == 'OFF' and prev_status == 'ON' and prev_sqz_id >= 6:
-            if sqz_hcolor == 'lime':
-                signal = "买入"
+        # ==========================================================
+        # 6️⃣ SQZ 释放信号定义
+        # 条件解释：
+        # ① 昨天还在挤压（ON）
+        # ② 今天刚释放（OFF）
+        # ③ 挤压持续 ≥ 6 天
+        # ④ 第一根亮绿柱
+        # ==========================================================
+        if not (
+            sqz_status == 'OFF' and
+            prev_status == 'ON' and
+            prev_sqz_id >= 6 and
+            sqz_hcolor == 'lime'
+        ):
+            return None
 
-        # 返回结果
-        if signal == "买入":
-            # iloc[-7:-1] 表示从倒数第7个开始，到倒数第2个结束（不含倒数第1个）
-            pre_signal_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()
-            color_parts = []
-            for i in range(6):
-                # pre_signal_colors 的最后一个元素是昨天
-                color_val = pre_signal_colors[-(i + 1)]
-                color_parts.append(f"前{i + 1}日:{color_val}")
+        # ==========================================================
+        # 7️⃣ 提取信号前 6 天的柱状颜色
+        # 前1日 = 昨天
+        # ==========================================================
+        raw_colors = (
+            df['sqz_hcolor']
+            .iloc[-7:-1]      # 不含当天
+            .tolist()[::-1]   # 反转顺序
+        )
 
-            color_str = " | ".join(color_parts)
+        color_cols = {}
+        for i in range(6):
+            raw = raw_colors[i] if i < len(raw_colors) else None
+            color_cols[f"前{i+1}日"] = COLOR_MAP.get(raw, '未知')
 
-            # 4. 计算 ATR 止损
-            df = atr_indicator(df, length=14, multiplier=1.5)
-            last_atr = df.iloc[-1]
-            trade_date = str(last.get('date'))
+        # ==========================================================
+        # 8️⃣ SQZ 释放评分
+        # 越靠近信号日，红色权重越高
+        # ==========================================================
+        score = 0.0
+        for i in range(6):
+            color_name = color_cols.get(f"前{i+1}日")
 
-            # 涨幅
-            current_close = float(df['close'].iloc[-1])
-            prev_close = float(df['close'].iloc[-2])
-            pct_change = round((current_close - prev_close) / prev_close * 100, 2)
+            weight = 6 - i   # 前1日权重6，前6日权重1
+            color_factor = COLOR_SCORE.get(color_name, 0)
 
-            return {
-                "日期": trade_date,
-                "代码": symbol,
-                "当前价": round(current_close, 2),
-                "涨幅(%)": float(pct_change),
-                "信号前6日颜色": color_str,
-                "建议止损价": round(last_atr.get('atr_long_stop'), 2)
-            }
+            score += weight * color_factor
 
-    except Exception as e:
-        # 这里不需要打印，错误会抛给 _worker 的 try...except
+        score = round(score, 2)
+
+        # ==========================================================
+        # 9️⃣ ATR 止损计算
+        # ==========================================================
+        df = atr_indicator(df, length=14, multiplier=1.5)
+        last_atr = df.iloc[-1]
+
+        # ==========================================================
+        # 🔟 返回扫描结果
+        # ==========================================================
+        return {
+            "日期": str(last.get('date')),
+            "代码": symbol,
+            "当前价": round(current_close, 2),
+            "涨幅(%)": round(pct_chg, 2),
+            # 前 6 日柱状颜色
+            **color_cols,
+            # SQZ 释放质量评分
+            "SQZ释放评分": score,
+            # ATR 动态止损
+            "建议止损价": round(last_atr.get('atr_long_stop'), 2)
+        }
+
+    except Exception:
+        # 扫描场景下，单票异常直接跳过
         return None
-
-    return None
