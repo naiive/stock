@@ -14,7 +14,7 @@ from strategies import (
 )
 
 STRATEGY_REGISTRY = {
-    # 原生squeeze 策略【⭐⭐⭐】
+    # 综合 squeeze 策略【⭐⭐⭐⭐⭐】
     "squeeze": squeeze_strategy.run_strategy,
     # squeeze + adx > 25 策略【⭐⭐⭐⭐⭐】
     "squeeze_adx": squeeze_adx_strategy.run_strategy,
