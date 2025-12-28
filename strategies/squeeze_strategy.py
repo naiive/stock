@@ -97,14 +97,14 @@ def run_strategy(df, symbol, adx_length=14, adx_threshold=20):
         # 4️⃣ ADX 趋势确认
         # -----------------------------
         df = adx_di_indicator(df, length=adx_length)
-        adx_val = float(df['adx'].iloc[-1])
-        plus_di = float(df['adx_plus'].iloc[-1])
-        minus_di = float(df['adx_minus'].iloc[-1])
+        adx_val = round(float(df['adx'].iloc[-1]), 2)
+        plus_di = round(float(df['adx_plus'].iloc[-1]), 2)
+        minus_di = round(float(df['adx_minus'].iloc[-1]), 2)
         adx_hit = adx_val >= adx_threshold and plus_di > minus_di  # 命中条件
 
         if adx_hit:
-            result["adx命中"] = {
-                "adx值": adx_val,  # ADX 强度
+            result["ADX命中"] = {
+                "ADX": adx_val,    # ADX 强度
                 "+DI": plus_di,    # 多方趋势指标
                 "-DI": minus_di    # 空方趋势指标
             }
@@ -118,7 +118,7 @@ def run_strategy(df, symbol, adx_length=14, adx_threshold=20):
         resistance_hit = current_close > srb_resistance if srb_resistance > 0 else False
 
         if resistance_hit:
-            ema200_val = float(df['close'].rolling(200).mean().iloc[-1])  # EMA200 均线
+            ema200_val = round(float(df['close'].rolling(200).mean().iloc[-1]), 2)  # EMA200 均线
             close_D1 = float(df['close'].iloc[-4])
             close_D2 = float(df['close'].iloc[-3])
             close_D3 = float(df['close'].iloc[-2])
@@ -132,7 +132,7 @@ def run_strategy(df, symbol, adx_length=14, adx_threshold=20):
             break_trend = f"{trend_D1}-{trend_D2}-{trend_D3}"     # 趋势字符串
             break_score = int(status_D1 + status_D2 + status_D3)  # 趋势得分
 
-            result["resistance命中"] = {
+            result["RESISTANCE策略命中"] = {
                 "突破趋势": break_trend,
                 "突破得分": break_score,
                 "EMA200": ema200_val,
