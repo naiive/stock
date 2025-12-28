@@ -24,15 +24,35 @@ COLOR_SCORE = {
     '绿|亮': 0.1
 }
 
-def run_strategy(df, symbol, adx_length=14, adx_threshold=20):
+def run_strategy(
+        df: pd.DataFrame,            # 股票历史行情数据，必须包含 'close'、'date' 等列
+        symbol: str,                 # 股票代码，用于返回结果标识
+        adx_length: int = 14,        # ADX 指标计算周期长度，整数，默认14
+        adx_threshold: float = 25,   # ADX 命中阈值，超过此值且 +DI > -DI 则认为趋势成立
+        atr_multiplier: float = 1.5  # ATR 动态止损倍数，float，默认1.5
+) -> dict | None:                    # 返回字典，包含命中信息和指标数据；未命中返回 None
     """
     综合扫描策略：
-    - SQZMOM 挤压释放
-    - ADX 趋势确认（参数可配置）
-    - 前高突破（SRB）
-    - ATR 动态止损
-    每个指标独立计算命中状态
-    返回字典包含命中状态、评分及相关信息
+    1️⃣ SQZMOM 挤压释放（大前提）
+    2️⃣ ADX 趋势确认（参数可配置）
+    3️⃣ 前高突破（SRB）
+    4️⃣ ATR 动态止损
+
+    参数说明：
+    - df: 股票历史行情数据 DataFrame，必须包含 ['close', 'date'] 等列
+    - symbol: 股票代码
+    - adx_length: ADX 指标计算长度
+    - adx_threshold: ADX 命中阈值
+    - atr_multiplier: ATR 动态止损倍数
+
+    返回：
+    - 命中时返回字典，包含：
+        - 日期、代码、当前价、涨幅
+        - 前6日SQZ柱颜色及释放评分
+        - ADX命中信息（仅命中时）
+        - 前高突破信息（仅命中时）
+        - ATR动态止损
+    - 未命中返回 None
     """
 
     try:
@@ -142,7 +162,7 @@ def run_strategy(df, symbol, adx_length=14, adx_threshold=20):
         # -----------------------------
         # 6️⃣ ATR 止损
         # -----------------------------
-        df = atr_indicator(df, length=14, multiplier=1.5)
+        df = atr_indicator(df, length=14, multiplier=atr_multiplier)
         last_atr = df.iloc[-1]
         atr_stop = float(round(last_atr.get('atr_long_stop'),2))
         result["建议止损价"] = atr_stop
