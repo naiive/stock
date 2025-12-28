@@ -165,16 +165,30 @@ def build_unified_message(
                     lines.append(f"💰 {col}: {val_str}")
                 elif "涨幅" in col:
                     lines.append(f"📈 {col}: {val_str}%")
+                elif "市值" in col:
+                    lines.append(f"🏦 {col}: {val_str} 亿")
+                elif "换手率" in col:
+                    lines.append(f"🔄 {col}: {val_str}%")
+
                 elif "SQZ" in col or "评分" in col:
                     lines.append(f"🎯 {col}: {val_str}")
                 elif "止损" in col:
                     lines.append(f"⚠️ {col}: {val_str}")
                 elif "ADX" in col:
                     lines.append(f"📊 {col}: {val_str}")
-                elif "市值" in col:
-                    lines.append(f"🏦 {col}: {val_str} 亿")
-                elif "换手率" in col:
-                    lines.append(f"🔄 {col}: {val_str}%")
+
+                elif "左波峰日期" in col:
+                    lines.append(f"📅 {col}: {val_str}")
+                elif "右波峰日期" in col:
+                    lines.append(f"📅️ {col}: {val_str}")
+                elif "EMA200" in col:
+                    lines.append(f"📈 {col}: {val_str}")
+
+                elif "红线" in col:
+                    lines.append(f"🔴 {col}: {val_str}")
+                elif "绿线" in col:
+                    lines.append(f"🟢 {col}: {val_str}")
+
                 else:
                     lines.append(f"{col}: {val_str}")
 
