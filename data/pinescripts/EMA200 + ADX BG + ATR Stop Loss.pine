@@ -1,0 +1,108 @@
+// =====================================================
+// EMA200 + ADX Trend Strength (BG)
+// + ATR Stop Loss Finder (v6)
+// =====================================================
+// Original ATR by © BeikabuOyaji (v4)
+// Upgraded & Integrated to v6
+// =====================================================
+
+//@version=6
+indicator("EMA200 + ADX BG + ATR Stop Loss (v6)", overlay = true)
+
+// =====================================================
+// ================= 参数配置 ===========================
+// =====================================================
+
+// ---------- EMA ----------
+ema_len = input.int(200, "EMA Length", minval = 1)
+
+// ---------- ADX ----------
+adx_len = input.int(14,  "ADX Length", minval = 1)
+adx_th  = input.int(25,  "ADX Threshold", minval = 1)
+bg_col  = input.color(color.new(color.green, 85), "ADX Strong Trend BG")
+
+// ---------- ATR ----------
+atr_len      = input.int(14, "ATR Length", minval = 1)
+atr_mult     = input.float(1.5, "ATR Multiplier", step = 0.1)
+atr_smooth   = input.string("RMA", "ATR Smoothing",
+                options = ["RMA", "SMA", "EMA", "WMA"])
+
+show_price_line = input.bool(true, "Track Price Line")
+
+// ATR 颜色
+atr_col_long  = input.color(color.teal, "ATR Long Line Color")
+atr_col_short = input.color(color.red,  "ATR Short Line Color")
+atr_text_col  = input.color(color.blue, "ATR Text Color")
+
+// =====================================================
+// ================= EMA200 =============================
+// =====================================================
+ema200 = ta.ema(close, ema_len)
+plot(ema200, "EMA200", color = color.orange, linewidth = 2)
+
+// =====================================================
+// ================= ADX（仅作背景） =====================
+// =====================================================
+
+// --- True Range ---
+trueRange = math.max(
+    math.max(high - low, math.abs(high - nz(close[1]))),
+    math.abs(low - nz(close[1]))
+)
+
+// --- Directional Movement ---
+dmPlus  = (high - nz(high[1]) > nz(low[1]) - low)  ? math.max(high - nz(high[1]), 0) : 0
+dmMinus = (nz(low[1]) - low  > high - nz(high[1])) ? math.max(nz(low[1]) - low, 0)  : 0
+
+// --- Wilder smoothing ---
+trSmooth      = ta.rma(trueRange, adx_len)
+dmPlusSmooth  = ta.rma(dmPlus, adx_len)
+dmMinusSmooth = ta.rma(dmMinus, adx_len)
+
+// --- ADX ---
+diPlus  = 100 * dmPlusSmooth  / trSmooth
+diMinus = 100 * dmMinusSmooth / trSmooth
+dx      = 100 * math.abs(diPlus - diMinus) / (diPlus + diMinus)
+adx     = ta.sma(dx, adx_len)
+
+// --- 背景提示 ---
+bgcolor(adx > adx_th ? bg_col : na, title = "ADX Strong Trend BG")
+
+// =====================================================
+// ================= ATR Stop Loss ======================
+// =====================================================
+
+// --- MA Function（与 v4 行为一致） ---
+ma_func(src, len) =>
+    switch atr_smooth
+        "RMA" => ta.rma(src, len)
+        "SMA" => ta.sma(src, len)
+        "EMA" => ta.ema(src, len)
+        => ta.wma(src, len)
+
+// --- ATR ---
+atr_raw = ma_func(ta.tr(true), atr_len)
+atr_val = atr_raw * atr_mult
+
+// --- Stop Loss Lines ---
+atr_short = high + atr_val   // 空头止损
+atr_long  = low  - atr_val   // 多头止损
+
+p1 = plot(atr_short, "ATR Short Stop", atr_col_short,
+     linewidth = 1, trackprice = show_price_line)
+
+p2 = plot(atr_long, "ATR Long Stop", atr_col_long,
+     linewidth = 1, trackprice = show_price_line)
+
+// =====================================================
+// ================= 信息表格 ============================
+// =====================================================
+var table infoTable = table.new(position.bottom_center, 3, 1, border_width = 2)
+
+if barstate.islast
+    table.cell(infoTable, 0, 0, "ATR: " + str.tostring(atr_val, "#.##"),
+        text_color = atr_text_col)
+    table.cell(infoTable, 1, 0, "H: " + str.tostring(atr_short, "#.##"),
+        text_color = atr_col_short)
+    table.cell(infoTable, 2, 0, "L: " + str.tostring(atr_long, "#.##"),
+        text_color = atr_col_long)
