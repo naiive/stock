@@ -1,0 +1,18 @@
+//@version=6
+indicator("Aroon Oscillator", "Aroon Osc", timeframe = "", timeframe_gaps = true)
+
+import TradingView/ta/11 as TVta
+
+int lengthInput = input.int(14, "Length", 1)
+
+// Calculate Aroon Up and Aroon Down values, then compute their difference.
+[aroonUp, aroonDn] = TVta.aroon(lengthInput)
+float osc = aroonUp - aroonDn
+
+// Plot the oscillator and display threshold lines.
+oscPlot  = plot(osc, "Oscillator", osc >= 0 ? #4caf50 : #ff5252)
+zeroPlot = plot(0, "", na, display = display.none, editable = false)
+fill(oscPlot, zeroPlot, osc >= 0 ? #4caf501a : #ff52521a, "Oscillator fill")
+hline(0,   "Center")
+hline(90,  "Upper level")
+hline(-90, "Lower level")
