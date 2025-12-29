@@ -95,7 +95,7 @@ def squeeze_momentum_indicator(
         df: pd.DataFrame,
         length: int = 20,
         lengthKC: int = 20,
-        multKC: float = 1.5,
+        multKC: float = 1.2,
         useTrueRange: bool = True
 )-> pd.DataFrame:
     """
