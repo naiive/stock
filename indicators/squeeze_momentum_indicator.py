@@ -119,11 +119,6 @@ def squeeze_momentum_indicator(
         600519  2025-04-16  1522.17  1545.71  1507.46  1529.20   3115605.0  4.834881e+09         ON  -35.621407       7     maroon
         600519  2025-04-17  1524.13  1546.20  1520.20  1539.82   2384605.0  3.733925e+09         ON  -25.492939       8     maroon
     """
-    length = INDICATOR_CONFIG.get("SQZ", {}).get("length", length)
-    lengthKC = INDICATOR_CONFIG.get("SQZ", {}).get("lengthKC", lengthKC)
-    multKC = INDICATOR_CONFIG.get("SQZ", {}).get("multKC", multKC)
-    useTrueRange = INDICATOR_CONFIG.get("SQZ", {}).get("useTrueRange", useTrueRange)
-
     close, high, low = df['close'], df['high'], df['low']
 
     # 计算Bollinger Bands (BB)
