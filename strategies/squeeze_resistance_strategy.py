@@ -48,12 +48,7 @@ def run_strategy(df, symbol):
         # ==================================================
         # 4️⃣ 前高突破（SRB）
         # ==================================================
-        df = support_resistance_breaks_indicator(
-            df,
-            left_bars=15,
-            right_bars=15,
-            volume_thresh=20.0
-        )
+        df = support_resistance_breaks_indicator(df)
 
         last_srb = df.iloc[-1]
         srb_resistance = pd.to_numeric(
@@ -67,12 +62,7 @@ def run_strategy(df, symbol):
         # ==================================================
         # 5️⃣ SQZMOM 指标
         # ==================================================
-        df = squeeze_momentum_indicator(
-            df,
-            lengthKC=20,
-            multKC=1.5,
-            useTrueRange=True
-        )
+        df = squeeze_momentum_indicator(df)
 
         last = df.iloc[-1]
         prev = df.iloc[-2]
@@ -140,7 +130,7 @@ def run_strategy(df, symbol):
         # ==================================================
         # 🔟 ATR 止损
         # ==================================================
-        df = atr_indicator(df, length=14, multiplier=1.5)
+        df = atr_indicator(df)
         last_atr = df.iloc[-1]
 
         # ==================================================

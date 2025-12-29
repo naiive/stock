@@ -4,7 +4,6 @@ import pandas as pd
 from indicators.aroon_oscillator_indicator import aroon_oscillator_indicator
 from indicators.atr_indicator import atr_indicator
 
-
 def run_strategy(df, symbol):
     """
     A股全市场扫描策略
@@ -40,7 +39,7 @@ def run_strategy(df, symbol):
         # 返回结果
         if signal == "buy":
             # 4. 只有信号触发，才计算 ATR 止损
-            df = atr_indicator(df, length=14, multiplier=1.5)
+            df = atr_indicator(df)
             last_atr = df.iloc[-1]
             trade_date = str(current.get('date'))
             return {

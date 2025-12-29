@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 
-import pandas as pd
 from indicators.macd_histogram_double_divergence_indicator import macd_histogram_double_divergence_indicator
 from indicators.atr_indicator import atr_indicator
-
 
 def run_strategy(df, symbol):
     """
@@ -40,7 +38,7 @@ def run_strategy(df, symbol):
         # 返回结果
         if signal == "buy":
             # 只有信号触发，才计算 ATR 止损
-            df = atr_indicator(df, length=14, multiplier=1.5)
+            df = atr_indicator(df)
             last_atr = df.iloc[-1]
             return {
                 "日期": str(current.get('date')),

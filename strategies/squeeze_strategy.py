@@ -26,7 +26,7 @@ def run_strategy(
         symbol: str,                 # 股票代码，用于返回结果标识
         adx_length: int = 14,        # ADX 指标计算周期长度，整数，默认14
         adx_threshold: float = 25,   # ADX 命中阈值，超过此值且 +DI > -DI 则认为趋势成立
-        atr_multiplier: float = 1.5  # ATR 动态止损倍数，float，默认1.5
+        atr_multiplier: float = 1.2  # ATR 动态止损倍数，float，默认1.5
 ):
     """
     综合扫描策略：
@@ -77,7 +77,7 @@ def run_strategy(
         # -----------------------------
         # 3️⃣ SQZMOM 挤压释放
         # -----------------------------
-        df = squeeze_momentum_indicator(df, lengthKC=20, multKC=1.5, useTrueRange=True)
+        df = squeeze_momentum_indicator(df)
         last = df.iloc[-1]  # 当天数据
         prev = df.iloc[-2]  # 前一天数据
 
@@ -113,7 +113,7 @@ def run_strategy(
         # -----------------------------
         # 4️⃣ ADX 趋势确认
         # -----------------------------
-        df = adx_di_indicator(df, length=adx_length)
+        df = adx_di_indicator(df)
         adx_val = round(float(df['adx'].iloc[-1]), 2)
         plus_di = round(float(df['adx_plus'].iloc[-1]), 2)
         minus_di = round(float(df['adx_minus'].iloc[-1]), 2)
@@ -129,7 +129,7 @@ def run_strategy(
         # -----------------------------
         # 5️⃣ 前高突破（SRB）
         # -----------------------------
-        df = support_resistance_breaks_indicator(df, left_bars=15, right_bars=15, volume_thresh=20.0)
+        df = support_resistance_breaks_indicator(df)
         last_srb = df.iloc[-1]
         srb_resistance = float(pd.to_numeric(last_srb.get('srb_resistance'), errors='coerce') or 0)
         resistance_hit = current_close > srb_resistance if srb_resistance > 0 else False
@@ -159,7 +159,7 @@ def run_strategy(
         # -----------------------------
         # 6️⃣ ATR 止损
         # -----------------------------
-        df = atr_indicator(df, length=14, multiplier=atr_multiplier)
+        df = atr_indicator(df)
         last_atr = df.iloc[-1]
         atr_stop = float(round(last_atr.get('atr_long_stop'),2))
         result["建议止损价"] = atr_stop

@@ -15,7 +15,7 @@ def run_strategy(df, symbol):
     """
     try:
 
-        df = fair_value_gap_indicator(df, threshold_pct=0.0, auto_threshold=False )
+        df = fair_value_gap_indicator(df)
         last = df.iloc[-1]
         current_close = float(df['close'].iloc[-1])
         prev_close = float(df['close'].iloc[-2])
@@ -25,7 +25,7 @@ def run_strategy(df, symbol):
         if fvg_type != 'bull':
             return None
 
-        df = atr_indicator(df, length=14, multiplier=1.5)
+        df = atr_indicator(df)
         last_atr = df.iloc[-1]
         trade_date = str(last.get('date'))
 

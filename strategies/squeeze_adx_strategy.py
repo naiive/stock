@@ -48,7 +48,7 @@ def run_strategy(df, symbol):
         # 4️⃣ ADX 趋势强度过滤
         # ADX > 25 表示趋势明确
         # ==========================================================
-        df = adx_di_indicator(df, length=14, threshold=25)
+        df = adx_di_indicator(df)
         adx_val = df.iloc[-1].get('adx')
 
         if pd.isna(adx_val) or adx_val <= 25:
@@ -57,12 +57,7 @@ def run_strategy(df, symbol):
         # ==========================================================
         # 5️⃣ 计算 SQZMOM（挤压动能）
         # ==========================================================
-        df = squeeze_momentum_indicator(
-            df,
-            lengthKC=20,          # KC 周期
-            multKC=1.5,           # KC 倍数
-            useTrueRange=True
-        )
+        df = squeeze_momentum_indicator(df)
 
         last = df.iloc[-1]       # 今天
         prev = df.iloc[-2]       # 昨天
@@ -124,7 +119,7 @@ def run_strategy(df, symbol):
         # ==========================================================
         # 9️⃣ ATR 止损计算
         # ==========================================================
-        df = atr_indicator(df, length=14, multiplier=1.5)
+        df = atr_indicator(df)
         last_atr = df.iloc[-1]
 
         # ==========================================================

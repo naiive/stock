@@ -38,7 +38,7 @@ def run_strategy(df, symbol):
             return None
 
         # 3.4 crosses
-        df = wavetrend_with_crosses_indicator(df, channelLength=10, averageLength=21, smaLength=4, obLevel1=60, obLevel2=53, osLevel1=-60, osLevel2=-53)
+        df = wavetrend_with_crosses_indicator(df)
         last = df.iloc[-1]
 
         wtc_green = pd.to_numeric(last.get('wtc_green'), errors='coerce')
@@ -54,7 +54,7 @@ def run_strategy(df, symbol):
         # 返回结果
         if signal == "买入":
             # 4. 只有信号触发，才计算 ATR 止损
-            df = atr_indicator(df, length=14, multiplier=1.5)
+            df = atr_indicator(df)
             last_atr = df.iloc[-1]
             trade_date = str(last.get('date'))
             return {
