@@ -24,7 +24,7 @@ STRATEGY_REGISTRY = {
     "squeeze_red_cover": squeeze_red_cover_strategy.run_strategy,
     # squeeze 底背离 策略【⭐⭐】
     "squeeze_divergence": squeeze_divergence_strategy.run_strategy,
-    # macd 双峰底背离 策略【⭐⭐⭐⭐⭐】
+    # macd 双峰底背离 策略【⭐⭐⭐⭐】
     "macd_histogram_double_divergence": macd_histogram_double_divergence_strategy.run_strategy,
     # 交叉买入型号 策略【⭐⭐⭐⭐】
     "cross": cross_strategy.run_strategy,
