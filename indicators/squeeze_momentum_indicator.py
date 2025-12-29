@@ -9,7 +9,6 @@
 import pandas as pd
 import numpy as np
 from enum import Enum
-from conf.config import INDICATOR_CONFIG
 
 class MomentumHistogramColor(Enum):
     BULL_ACCELERATING = "lime"     # 亮绿：多头动能 在增强
