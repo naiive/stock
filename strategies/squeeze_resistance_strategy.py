@@ -141,6 +141,7 @@ def run_strategy(df, symbol):
             "代码": symbol,
             "当前价": round(current_close, 2),
             "涨幅(%)": round(pct_chg, 2),
+            "连续挤压个数": prev_sqz_id,
             # 突破结构
             "突破趋势": break_trend,
             "突破得分": break_score,

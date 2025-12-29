@@ -68,7 +68,7 @@ def run_strategy(
 
         # 初始化返回字典
         result = {
-            "日期": str(df['date'].iloc[-1]),   # 信号日期
+            "日期": str(df['date'].iloc[-1]),    # 信号日期
             "代码": symbol,                      # 股票代码
             "当前价": current_close,             # 当日收盘价
             "涨幅(%)": pct_chg                   # 当日涨幅 %
@@ -163,6 +163,7 @@ def run_strategy(
         last_atr = df.iloc[-1]
         atr_stop = float(round(last_atr.get('atr_long_stop'),2))
         result["建议止损价"] = atr_stop
+        result["连续挤压个数"] = prev_sqz_id
 
         return result
 
