@@ -18,6 +18,13 @@ def macd_histogram_double_divergence_indicator(
     """
     MACD Histogram 双底背离（严格形态学定义）
     信号记录在“确认完成的那根 K 线收盘”
+
+date        code   open   high    low  close       volume        amount      macd    signal    hist  min_threshold  macd_bull macd_l_date  macd_l_hist macd_r_date  macd_r_hist
+2022-10-10  002352  44.09  44.19  42.23  42.32   12142769.0  5.597914e+08 -0.952977 -0.773765 -0.1792       0.065333      False         NaT          NaN         NaT          NaN
+2022-10-11  002352  42.60  42.66  41.50  41.88   15974383.0  7.188769e+08 -1.089944 -0.837001 -0.2529       0.065117      False         NaT          NaN         NaT          NaN
+2022-10-12  002352  41.79  42.56  40.96  42.51   13670971.0  6.128951e+08 -1.137739 -0.897148 -0.2406       0.065035      False         NaT          NaN         NaT          NaN
+2022-10-13  002352  42.19  42.98  42.06  42.51   11500925.0  5.270049e+08 -1.167078 -0.951134 -0.2159       0.065074       True  2022-09-26      -0.3252  2022-10-11      -0.2529
+2022-10-14  002352  44.19  46.28  44.04  46.00   39387470.0  1.935313e+09 -0.882118 -0.937331  0.0552       0.065148      False         NaT          NaN         NaT          NaN
     """
     df = df.copy()
     df.columns = [c.lower() for c in df.columns]
