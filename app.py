@@ -74,7 +74,7 @@ def main():
 
     # 使用 LogRedirector 装饰/上下文，将 print 输出的内容同时定向到控制台和本地 .log 文件
     with LogRedirector(log_folder=log_dir):
-        print(f"{'=' * 50}\n🚀 量化交易全市场扫描系统 v2.0 (Async)\n{'=' * 50}")
+        print(f"{'=' * 50}\n🚀 Naive扫描器\n{'=' * 50}")
 
         try:
             # 【核心启动命令】

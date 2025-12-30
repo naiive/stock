@@ -31,17 +31,14 @@ def run_strategy(df, symbol):
         prev_close = float(df['close'].iloc[-2])
         pct_chg = (current_close - prev_close) / prev_close * 100
 
-        signal = None
-        if macd_bull == "Yes":
-            signal = "buy"
 
         # 返回结果
-        if signal == "buy":
+        if macd_bull:
             # 只有信号触发，才计算 ATR 止损
             df = atr_indicator(df)
             last_atr = df.iloc[-1]
             return {
-                "日期": str(current.get('date')),
+                "日期": current.name.strftime('%Y-%m-%d'),
                 "代码": symbol,
                 "当前价": round(current_close, 2),
                 "涨幅(%)": round(pct_chg, 2),
