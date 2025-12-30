@@ -31,7 +31,6 @@ def run_strategy(df, symbol):
         prev_close = float(df['close'].iloc[-2])
         pct_chg = (current_close - prev_close) / prev_close * 100
 
-
         # 返回结果
         if macd_bull:
             # 只有信号触发，才计算 ATR 止损
