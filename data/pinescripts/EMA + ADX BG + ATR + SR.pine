@@ -1,0 +1,109 @@
+// =====================================================
+// EMA200 + ADX Trend Strength (BG)
+// + ATR Stop Loss Finder (v6)
+// + S/R Levels [LuxAlgo Integrated]
+// =====================================================
+
+//@version=6
+indicator("EMA + ADX + ATR + SR", overlay = true, max_bars_back=1000)
+
+// =====================================================
+// ================= 1. 支撑压力位参数 ==================
+// =====================================================
+group_sr    = "1. Support & Resistance"
+showSR      = input.bool(true, "显示 支撑/压力线", group=group_sr)
+leftBars    = input.int(15, "左侧侧边栏 (Left Bars)", minval=1, group=group_sr)
+rightBars   = input.int(15, "右侧侧边栏 (Right Bars)", minval=1, group=group_sr)
+resColor    = input.color(color.new(#FF0000, 0), "压力线颜色", group=group_sr)
+supColor    = input.color(color.new(#233dee, 0), "支撑线颜色", group=group_sr)
+
+// =====================================================
+// ================= 2. EMA 参数 =======================
+// =====================================================
+group_ema   = "2. EMA Trend"
+showEMA     = input.bool(true, "显示 EMA200", group=group_ema)
+ema_len     = input.int(200, "EMA 长度", minval = 1, group=group_ema)
+ema_col     = input.color(color.orange, "EMA 颜色", group=group_ema)
+
+// =====================================================
+// ================= 3. ADX 参数 =======================
+// =====================================================
+group_adx   = "3. ADX Strength (Background)"
+showADX     = input.bool(true, "显示 ADX 趋势背景", group=group_adx)
+adx_len     = input.int(14,  "ADX 长度", minval = 1, group=group_adx)
+adx_th      = input.int(25,  "ADX 阈值", minval = 1, group=group_adx)
+bg_col      = input.color(color.new(color.green, 85), "强趋势背景颜色", group=group_adx)
+
+// =====================================================
+// ================= 4. ATR 参数 =======================
+// =====================================================
+group_atr   = "4. ATR Stop Loss"
+showATR     = input.bool(true, "显示 ATR 止损线", group=group_atr)
+atr_len      = input.int(14, "ATR 长度", minval = 1, group=group_atr)
+atr_mult     = input.float(1.5, "ATR 倍数", step = 0.1, group=group_atr)
+atr_smooth   = input.string("RMA", "ATR 平滑算法", options = ["RMA", "SMA", "EMA", "WMA"], group=group_atr)
+show_price_line = input.bool(true, "跟踪价格线 (Track Price Line)", group=group_atr)
+showTable    = input.bool(true, "显示 ATR 信息表格", group=group_atr)
+
+// ATR 颜色
+atr_col_long  = input.color(color.teal, "ATR 多头线颜色", group=group_atr)
+atr_col_short = input.color(color.red,  "ATR 空头线颜色", group=group_atr)
+atr_text_col  = input.color(color.blue, "表格文字颜色", group=group_atr)
+
+// =====================================================
+// ================= 逻辑计算与绘图 =====================
+// =====================================================
+
+// --- [S/R Levels] ---
+ph = ta.pivothigh(high, leftBars, rightBars)
+pl = ta.pivotlow(low, leftBars, rightBars)
+highLevel = ta.valuewhen(not na(ph), ph, 0)
+lowLevel  = ta.valuewhen(not na(pl), pl, 0)
+bool highChanged = ta.change(highLevel) != 0
+bool lowChanged  = ta.change(lowLevel) != 0
+float plotHigh = showSR and not highChanged ? highLevel : na
+float plotLow  = showSR and not lowChanged  ? lowLevel  : na
+plot(plotHigh, color=resColor, linewidth=3, offset=-(rightBars + 1), title="Resistance", style=plot.style_linebr)
+plot(plotLow, color=supColor, linewidth=3, offset=-(rightBars + 1), title="Support", style=plot.style_linebr)
+
+// --- [EMA200] ---
+ema_val = ta.ema(close, ema_len)
+plot(showEMA ? ema_val : na, "EMA200", color = ema_col, linewidth = 2)
+
+// --- [ADX 背景] ---
+trueRange = math.max(math.max(high - low, math.abs(high - nz(close[1]))), math.abs(low - nz(close[1])))
+dmPlus  = (high - nz(high[1]) > nz(low[1]) - low)  ? math.max(high - nz(high[1]), 0) : 0
+dmMinus = (nz(low[1]) - low  > high - nz(high[1])) ? math.max(nz(low[1]) - low, 0)  : 0
+trSmooth      = ta.rma(trueRange, adx_len)
+dmPlusSmooth  = ta.rma(dmPlus, adx_len)
+dmMinusSmooth = ta.rma(dmMinus, adx_len)
+diPlus  = 100 * dmPlusSmooth  / trSmooth
+diMinus = 100 * dmMinusSmooth / trSmooth
+dx      = 100 * math.abs(diPlus - diMinus) / (diPlus + diMinus)
+adx_val = ta.sma(dx, adx_len)
+bgcolor(showADX and adx_val > adx_th ? bg_col : na, title = "ADX Strong Trend BG")
+
+// --- [ATR Stop Loss] ---
+ma_func(src, len) =>
+    switch atr_smooth
+        "RMA" => ta.rma(src, len)
+        "SMA" => ta.sma(src, len)
+        "EMA" => ta.ema(src, len)
+        => ta.wma(src, len)
+
+atr_raw = ma_func(ta.tr(true), atr_len)
+atr_val = atr_raw * atr_mult
+atr_short = high + atr_val
+atr_long  = low  - atr_val
+
+plot(showATR ? atr_short : na, "ATR Short Stop", atr_col_short, linewidth = 1, trackprice = show_price_line)
+plot(showATR ? atr_long : na, "ATR Long Stop", atr_col_long, linewidth = 1, trackprice = show_price_line)
+
+// --- [ATR 信息表格] ---
+var table infoTable = table.new(position.bottom_center, 3, 1, border_width = 2)
+if barstate.islast and showTable
+    table.cell(infoTable, 0, 0, "ATR: " + str.tostring(atr_val, "#.##"), text_color = atr_text_col)
+    table.cell(infoTable, 1, 0, "H: " + str.tostring(atr_short, "#.##"), text_color = atr_col_short)
+    table.cell(infoTable, 2, 0, "L: " + str.tostring(atr_long, "#.##"), text_color = atr_col_long)
+else if barstate.islast and not showTable
+    table.delete(infoTable) // 如果关闭开关，移除表格
