@@ -2,9 +2,8 @@
 
 # 策略注册表
 from strategies import (
-    squeeze_strategy,
-    squeeze_adx_strategy,
     squeeze_resistance_strategy,
+    squeeze_adx_strategy,
     squeeze_red_cover_strategy,
     squeeze_divergence_strategy,
     macd_histogram_double_divergence_strategy,
@@ -14,12 +13,10 @@ from strategies import (
 )
 
 STRATEGY_REGISTRY = {
-    # 综合 squeeze 策略【⭐⭐⭐⭐⭐】
-    "squeeze": squeeze_strategy.run_strategy,
-    # squeeze + adx > 25 策略【⭐⭐⭐⭐⭐】
-    "squeeze_adx": squeeze_adx_strategy.run_strategy,
     # squeeze + 突破前高 策略【⭐⭐⭐⭐⭐】
     "squeeze_resistance": squeeze_resistance_strategy.run_strategy,
+    # squeeze + adx > 25 策略【⭐⭐⭐⭐⭐】
+    "squeeze_adx": squeeze_adx_strategy.run_strategy,
     # squeeze 红色覆盖挤压释放 策略【⭐⭐⭐】
     "squeeze_red_cover": squeeze_red_cover_strategy.run_strategy,
     # squeeze 底背离 策略【⭐⭐】
