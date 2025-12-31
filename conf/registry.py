@@ -14,8 +14,6 @@ STRATEGY_REGISTRY = {
     "squeeze_resistance": squeeze_resistance_strategy.run_strategy,
     # squeeze + adx > 25 策略【⭐⭐⭐⭐⭐】
     "squeeze_adx": squeeze_adx_strategy.run_strategy,
-    # squeeze 红色覆盖挤压释放 策略【⭐⭐⭐】
-    "squeeze_red_cover": squeeze_red_cover_strategy.run_strategy,
     # macd 双峰底背离 策略【⭐⭐⭐⭐】
     "macd_histogram_double_divergence": macd_histogram_double_divergence_strategy.run_strategy,
     # 交叉买入型号 策略【⭐⭐⭐⭐】
