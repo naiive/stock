@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-
+import numpy as np
 import pandas as pd
 
+from core.map.squeeze_color_map import squeeze_color_map
 from indicators.adx_di_indicator import adx_di_indicator
 from indicators.atr_indicator import atr_indicator
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
@@ -31,7 +32,6 @@ def run_strategy(df, symbol):
         # ==========================================================
         current_close = float(df['close'].iloc[-1])
         prev_close = float(df['close'].iloc[-2])
-
         pct_chg = (current_close - prev_close) / prev_close * 100
         if pct_chg <= 0:
             return None
@@ -50,7 +50,6 @@ def run_strategy(df, symbol):
         # ==========================================================
         df = adx_di_indicator(df)
         adx_val = df.iloc[-1].get('adx')
-
         if pd.isna(adx_val) or adx_val <= 25:
             return None
 
@@ -58,17 +57,13 @@ def run_strategy(df, symbol):
         # 5️⃣ 计算 SQZMOM（挤压动能）
         # ==========================================================
         df = squeeze_momentum_indicator(df)
-
-        last = df.iloc[-1]       # 今天
+        current = df.iloc[-1]    # 今天
         prev = df.iloc[-2]       # 昨天
 
-        sqz_status = last.get('sqz_status')        # ON / OFF
+        sqz_status = current.get('sqz_status')        # ON / OFF
         prev_status = prev.get('sqz_status')
-        sqz_hcolor = last.get('sqz_hcolor')        # 动能柱颜色
-        prev_sqz_id = pd.to_numeric(
-            prev.get('sqz_id'),
-            errors='coerce'
-        )
+        sqz_hcolor = current.get('sqz_hcolor')        # 动能柱颜色
+        prev_sqz_id = pd.to_numeric(prev.get('sqz_id'), errors='coerce')
 
         # ==========================================================
         # 6️⃣ SQZ 释放信号定义
@@ -86,79 +81,55 @@ def run_strategy(df, symbol):
         ):
             return None
 
-        # ==========================================================
-        # 7️⃣ 提取信号前 6 天的柱状颜色
-        # 前1日 = 昨天
-        # ==========================================================
-        raw_colors = (
-            df['sqz_hcolor']
-            .iloc[-7:-1]      # 不含当天
-            .tolist()[::-1]   # 反转顺序
-        )
+        # ==================================================
+        # 7️⃣ 信号前6天的SQZMOM根柱子颜色和值（顺序：前6、5、4、3、2、1）
+        # ==================================================
+        raw_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()[::-1]
+        raw_values = df['sqz_hvalue'].iloc[-7:-1].tolist()[::-1]
 
-        color_cols = {}
+        color_value_cols = {}
         for i in range(6):
-            raw = raw_colors[i] if i < len(raw_colors) else None
-            color_cols[f"前{i+1}日"] = COLOR_MAP.get(raw, '未知')
+            raw_color = raw_colors[i] if i < len(raw_colors) else None
+            raw_value = raw_values[i] if i < len(raw_values) else None
+
+            color_str = squeeze_color_map.get(raw_color, 'NA')
+
+            if raw_value is None or np.isnan(raw_value):
+                value_str = "NA"
+            else:
+                if raw_value > 0:
+                    value_str = f"+{raw_value:.2f}"
+                elif raw_value < 0:
+                    value_str = f"-{abs(raw_value):.2f}"
+                else:
+                    value_str = f"{raw_value:.2f}"
+
+            color_value_cols[f"前{6 - i}日"] = f"{color_str}[{value_str}]"
 
         # ==========================================================
-        # 8️⃣ SQZ 释放评分
-        # 越靠近信号日，红色权重越高
-        # ==========================================================
-        score = 0.0
-        for i in range(6):
-            color_name = color_cols.get(f"前{i+1}日")
-
-            weight = 6 - i   # 前1日权重6，前6日权重1
-            color_factor = COLOR_SCORE.get(color_name, 0)
-
-            score += weight * color_factor
-
-        score = round(score, 2)
-
-        # ==========================================================
-        # 9️⃣ ATR 止损计算
+        # 8️⃣ ATR 止损计算
         # ==========================================================
         df = atr_indicator(df)
         last_atr = df.iloc[-1]
 
         # ==========================================================
-        # 🔟 返回扫描结果
+        # 9️⃣ 返回扫描结果
         # ==========================================================
+        historical_high = df['high'].max()
+        is_ath = "是" if current_close >= historical_high else "否"
         return {
-            "日期": str(last.get('date')),
+            "日期": current.name.strftime('%Y-%m-%d'),
             "代码": symbol,
-            "当前价": round(current_close, 2),
+            "现价": round(current_close, 2),
             "涨幅(%)": round(pct_chg, 2),
-            "连续挤压个数": prev_sqz_id,
-            # 前 6 日柱状颜色
-            **color_cols,
-            # SQZ 释放质量评分
-            "SQZ释放评分": score,
+            "连续挤压天数": prev_sqz_id,
+            # 前6日柱状颜色和值
+            **color_value_cols,
             # ATR 动态止损
-            "建议止损价": round(last_atr.get('atr_long_stop'), 2)
+            "建议止损价": round(last_atr.get('atr_long_stop'), 2),
+            "最近是否ATH": is_ath
         }
 
     except Exception:
         # 扫描场景下，单票异常直接跳过
         return None
-
-# ==================================================
-# SQZMOM 颜色映射（统一成四种）
-# ==================================================
-COLOR_MAP = {
-    'lime': '绿|亮',     # 强多头动能
-    'green': '绿|暗',    # 弱多头动能
-    'red': '红|亮',      # 强空头动能
-    'maroon': '红|暗'    # 弱空头动能
-}
-
-# ==================================================
-# SQZ 颜色评分系数（红色权重大）
-# ==================================================
-COLOR_SCORE = {
-    '红|暗': 1.0,
-    '红|亮': 0.8,
-    '绿|暗': 0.3,
-    '绿|亮': 0.1
-}

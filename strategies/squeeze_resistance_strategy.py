@@ -2,6 +2,7 @@
 import numpy as np
 import pandas as pd
 
+from core.map.squeeze_color_map import squeeze_color_map
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 from indicators.support_resistance_breaks_indicator import support_resistance_breaks_indicator
 
@@ -96,7 +97,7 @@ def run_strategy(df, symbol):
             raw_color = raw_colors[i] if i < len(raw_colors) else None
             raw_value = raw_values[i] if i < len(raw_values) else None
 
-            color_str = COLOR_MAP.get(raw_color, 'NA')
+            color_str = squeeze_color_map.get(raw_color, 'NA')
 
             if raw_value is None or np.isnan(raw_value):
                 value_str = "NA"
@@ -119,21 +120,12 @@ def run_strategy(df, symbol):
             "现价": round(current_close, 2),
             "涨幅(%)": round(pct_chg, 2),
             "连续挤压天数": prev_sqz_id,
-            # 前6天挤压状态
+            # 前6日柱状颜色和值
             **color_value_cols,
             "前6天突趋势": break_trend,
-            "最近是否ATH": is_ath,
+            "最近是否ATH": is_ath
         }
 
     except Exception:
         return None
 
-# ==================================================
-# SQZMOM 颜色映射
-# ==================================================
-COLOR_MAP = {
-    'lime': '绿亮',     # 强多头动能
-    'green': '绿暗',    # 弱多头动能
-    'red': '红亮',      # 强空头动能
-    'maroon': '红暗'    # 弱空头动能
-}
