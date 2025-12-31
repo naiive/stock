@@ -230,7 +230,6 @@ def build_unified_message(
     else:
         title = f"📄 扫描结果 · 第 {page_no}/{page_cnt} 页"
         lines = [
-            f"📄 扫描结果 · 第 {page_no}/{page_cnt} 页",
             "────────────────",
             "",
         ]
