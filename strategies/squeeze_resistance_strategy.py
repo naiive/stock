@@ -50,11 +50,11 @@ def run_strategy(df, symbol):
         # 5.历史最高价
         # ==================================================
         historical_high = df['high'].max()
-        is_ath = current_close >= historical_high
+        is_ath = "是" if current_close >= historical_high else "否"
 
-        # # ==================================================
-        # # 6.计算SQZMOM指标
-        # # ==================================================
+        # ==================================================
+        # 6.计算SQZMOM指标
+        # ==================================================
         df = squeeze_momentum_indicator(df)
         current = df.iloc[-1]
         prev = df.iloc[-2]
@@ -76,20 +76,17 @@ def run_strategy(df, symbol):
             return None
 
         # ==================================================
-        # 8.突破趋势（前3天）
-        # 倒数第4、3、2天 vs 前高
+        # 8.信号前突破趋势（顺序：前6、5、4、3、2、1）
         # ==================================================
-        close_D1 = df['close'].iloc[-4]
-        close_D2 = df['close'].iloc[-3]
-        close_D3 = df['close'].iloc[-2]
-
-        trend_D1 = "高" if close_D1 > srb_resistance else "低"
-        trend_D2 = "高" if close_D2 > srb_resistance else "低"
-        trend_D3 = "高" if close_D3 > srb_resistance else "低"
-        break_trend = f"{trend_D1}-{trend_D2}-{trend_D3}"
+        break_trend_list = []
+        for i in range(6, 0, -1):
+            close_i = df['close'].iloc[-(i + 1)]
+            trend_i = "高" if close_i > srb_resistance else "低"
+            break_trend_list.append(trend_i)
+        break_trend = "-".join(break_trend_list)
 
         # ==================================================
-        # 9.信号前6天的SQZMOM根柱子颜色和绝对值
+        # 9.信号前6天的SQZMOM根柱子颜色和值（顺序：前6、5、4、3、2、1）
         # ==================================================
         raw_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()[::-1]
         raw_values = df['sqz_hvalue'].iloc[-7:-1].tolist()[::-1]
@@ -111,7 +108,7 @@ def run_strategy(df, symbol):
                 else:
                     value_str = f"{raw_value:.2f}"
 
-            color_value_cols[f"前{i + 1}日"] = f"{color_str}[{value_str}]"
+            color_value_cols[f"前{6 - i}日"] = f"{color_str}[{value_str}]"
 
         # ==================================================
         # 10.返回结果
@@ -119,12 +116,13 @@ def run_strategy(df, symbol):
         return {
             "日期": current.name.strftime('%Y-%m-%d'),
             "代码": symbol,
-            "当前价": round(current_close, 2),
+            "现价": round(current_close, 2),
             "涨幅(%)": round(pct_chg, 2),
-            "最近ATH": is_ath,
-            "连续挤压": prev_sqz_id,
+            "连续挤压天数": prev_sqz_id,
+            # 前6天挤压状态
             **color_value_cols,
-            "前3天突破": break_trend
+            "前6天突趋势": break_trend,
+            "最近是否ATH": is_ath,
         }
 
     except Exception:
