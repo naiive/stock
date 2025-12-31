@@ -92,13 +92,11 @@ def run_strategy(df, symbol):
         raw_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()[::-1]
         raw_values = df['sqz_hvalue'].iloc[-7:-1].tolist()[::-1]
 
-        color_value_cols = {}
+        color_value_list = []
         for i in range(6):
             raw_color = raw_colors[i] if i < len(raw_colors) else None
             raw_value = raw_values[i] if i < len(raw_values) else None
-
             color_str = squeeze_color_map.get(raw_color, 'NA')
-
             if raw_value is None or np.isnan(raw_value):
                 value_str = "NA"
             else:
@@ -109,7 +107,8 @@ def run_strategy(df, symbol):
                 else:
                     value_str = f"{raw_value:.2f}"
 
-            color_value_cols[f"前{6 - i}日"] = f"{color_str}[{value_str}]"
+            color_value_list.append(f"{color_str}[{value_str}]")
+        color_value_cols = "-".join(color_value_list)
 
         # ==================================================
         # 10.返回结果
@@ -121,7 +120,7 @@ def run_strategy(df, symbol):
             "涨幅(%)": round(pct_chg, 2),
             "连续挤压天数": prev_sqz_id,
             # 前6日柱状颜色和值
-            **color_value_cols,
+            "前6天柱状图": color_value_cols,
             "前6天突趋势": break_trend,
             "最近是否ATH": is_ath
         }
