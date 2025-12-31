@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import numpy as np
 import pandas as pd
 
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
@@ -92,17 +92,26 @@ def run_strategy(df, symbol):
         # 9.信号前6天的SQZMOM根柱子颜色和绝对值
         # ==================================================
         raw_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()[::-1]
-        raw_values = df['sqz_hvalue'].iloc[-7:-1].abs().tolist()[::-1]
+        raw_values = df['sqz_hvalue'].iloc[-7:-1].tolist()[::-1]
 
         color_value_cols = {}
         for i in range(6):
             raw_color = raw_colors[i] if i < len(raw_colors) else None
             raw_value = raw_values[i] if i < len(raw_values) else None
 
-            color_str = COLOR_MAP.get(raw_color, '未知')
-            value_str = f"{raw_value:.2f}" if raw_value is not None else "N|A"
+            color_str = COLOR_MAP.get(raw_color, 'NA')
 
-            color_value_cols[f"前{i + 1}日"] = f"{color_str}|{value_str}"
+            if raw_value is None or np.isnan(raw_value):
+                value_str = "NA"
+            else:
+                if raw_value > 0:
+                    value_str = f"+{raw_value:.2f}"
+                elif raw_value < 0:
+                    value_str = f"-{abs(raw_value):.2f}"
+                else:
+                    value_str = f"{raw_value:.2f}"
+
+            color_value_cols[f"前{i + 1}日"] = f"{color_str}[{value_str}]"
 
         # ==================================================
         # 10.返回结果
@@ -118,7 +127,7 @@ def run_strategy(df, symbol):
             "前3天突破": break_trend
         }
 
-    except Exception as e:
+    except Exception:
         return None
 
 # ==================================================

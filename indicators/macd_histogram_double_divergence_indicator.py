@@ -30,6 +30,9 @@ date        code   open   high    low  close       volume        amount      mac
     df = df.copy()
 
     # 设置日期列为索引列
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'])
+
     if not isinstance(df.index, pd.DatetimeIndex):
         if 'date' in df.columns:
             df.set_index('date', inplace=True)

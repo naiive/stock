@@ -121,6 +121,9 @@ def squeeze_momentum_indicator(
     df = df.copy()
 
     # 设置日期列为索引列
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'])
+
     if not isinstance(df.index, pd.DatetimeIndex):
         if 'date' in df.columns:
             df.set_index('date', inplace=True)
