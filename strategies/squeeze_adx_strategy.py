@@ -88,10 +88,14 @@ def run_strategy(df, symbol):
         raw_values = df['sqz_hvalue'].iloc[-7:-1].tolist()[::-1]
 
         color_value_list = []
+        green_count = 0
         for i in range(6):
             raw_color = raw_colors[i] if i < len(raw_colors) else None
             raw_value = raw_values[i] if i < len(raw_values) else None
             color_str = squeeze_color_map.get(raw_color, 'NA')
+            # ✅ 统计绿色
+            if color_str is not None and "绿" in color_str:
+                green_count += 1
             if raw_value is None or np.isnan(raw_value):
                 value_str = "NA"
             else:
@@ -122,6 +126,8 @@ def run_strategy(df, symbol):
             "现价": round(current_close, 2),
             "涨幅(%)": round(pct_chg, 2),
             "连续挤压天数": prev_sqz_id,
+            "前6天绿色数": green_count,
+            # 前6日柱状颜色和值
             "前6天柱状图": color_value_cols,
             # ATR 动态止损
             "建议止损价": round(last_atr.get('atr_long_stop'), 2),
