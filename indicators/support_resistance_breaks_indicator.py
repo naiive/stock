@@ -31,6 +31,10 @@ def support_resistance_breaks_indicator(
     """
     df = df.copy()
 
+    # 统一日期格式
+    df['date'] = pd.to_datetime(df['date'])
+    df.set_index('date', inplace=True)
+
     # =========================
     # 1. Pivot 计算（无未来函数）
     # =========================
