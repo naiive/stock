@@ -280,10 +280,7 @@ if __name__ == "__main__":
     from scripts.stock_query import stock_zh_a_daily_mysql
 
     symbols = [
-        '002016',
-        '600381',
-        '600546',
-        '603099',
+        '002016'
     ]
 
     atr_mult_list = np.arange(0.8, 3.1, 0.2)
