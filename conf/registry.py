@@ -4,7 +4,6 @@
 from strategies import (
     squeeze_resistance_strategy,
     squeeze_adx_strategy,
-    squeeze_red_cover_strategy,
     macd_histogram_double_divergence_strategy,
     cross_strategy,
     aroon_oscillator_strategy
