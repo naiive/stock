@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-通知工具集：邮件与 Telegram 推送（改进版）
+通知工具集：邮件与 Telegram 推送（TradingView Scan 风格）
 - 自动适配不固定列
-- JSON / 字典列自动格式化
-- Telegram 消息自动分批发送、支持大量行
+- CSV → Scan 卡片风格输出
+- Telegram / Email 内容完全一致
 """
 
 from __future__ import annotations
@@ -81,6 +81,7 @@ def send_email(
         print(f"⚠️ Email failed: {e}")
         return False
 
+
 # =====================================================
 # Telegram HTTP
 # =====================================================
@@ -89,6 +90,7 @@ def _http_post_form(url: str, data: dict) -> dict:
     req = urllib.request.Request(url, data=encoded)
     with urllib.request.urlopen(req, timeout=20) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
 
 def send_telegram(
     bot_token: str,
@@ -112,34 +114,119 @@ def send_telegram(
         print(f"⚠️ Telegram failed: {e}")
         return False
 
-# =====================================================
-# JSON / dict 格式化工具
-# =====================================================
-def format_dict_or_json(val) -> str:
-    if isinstance(val, dict):
-        return " | ".join([f"{k}:{v}" for k, v in val.items()])
-    elif isinstance(val, str):
-        try:
-            parsed = json.loads(val)
-            if isinstance(parsed, dict):
-                return " | ".join([f"{k}:{v}" for k, v in parsed.items()])
-            elif isinstance(parsed, list):
-                return ", ".join([str(x) for x in parsed])
-            else:
-                return str(parsed)
-        except Exception:
-            return val
-    else:
-        return str(val)
 
 # =====================================================
-# Unified message builder
+# Emoji 解析工具
+# =====================================================
+HIST_EMOJI_MAP = {
+    "绿亮": "🟢",
+    "绿暗": "🟢",
+    "红亮": "🔴",
+    "红暗": "🔴",
+}
+
+BREAK_EMOJI_MAP = {
+    "高": "⬆️",
+    "低": "⬇️",
+}
+
+
+def parse_histogram_emoji(val) -> str:
+    if not val or pd.isna(val):
+        return ""
+    parts = str(val).split("-")
+    out = []
+    for p in parts:
+        for k, e in HIST_EMOJI_MAP.items():
+            if p.startswith(k):
+                out.append(e)
+                break
+    return "".join(out)
+
+
+def parse_break_emoji(val) -> str:
+    if not val or pd.isna(val):
+        return ""
+    return "".join(BREAK_EMOJI_MAP.get(x, "") for x in str(val).split("-"))
+
+
+def fmt_pct(val) -> str:
+    if val is None or pd.isna(val):
+        return "NA"
+    return f"{val:+.2f}%"
+
+
+# =====================================================
+# TradingView Scan 卡片
+# =====================================================
+def build_tv_card(row: pd.Series) -> str:
+    name = row.get("名称", "")
+    code = row.get("代码", "")
+
+    price = row.get("收盘价", row.get("现价", ""))
+    chg = fmt_pct(row.get("涨幅(%)"))
+    ytd = fmt_pct(row.get("年涨幅(%)"))
+
+    turnover = row.get("换手率(%)", "")
+    pe = row.get("市盈率(动)", "")
+
+    squeeze_days = row.get("挤压天数", "")
+
+    ath_val = str(row.get("是否ATH", "")).strip()
+    ath = "YES ATH" if ath_val == "是" else "No ATH"
+
+    hist = parse_histogram_emoji(row.get("动能情况"))
+    brk = parse_break_emoji(row.get("突破趋势"))
+
+    mv = row.get("总市值(亿)", "")
+    date = str(row.get("日期", ""))[5:10]
+
+    # 拼接卡片
+    lines = []
+
+    if name or code:
+        lines.append(f"💹 {name} · {code}")
+
+    if price:
+        lines.append(f"💰 {price}（{chg}）🗓 年 {ytd}")
+
+    if turnover or pe:
+        parts = []
+        if turnover:
+            parts.append(f"🔄 换 {turnover}%")
+        if pe:
+            parts.append(f"📐 PE {pe}")
+        lines.append("       ".join(parts))
+
+    if squeeze_days:
+        lines.append(f"🧨 挤压 {squeeze_days} 天     📍 {ath}")
+
+    if hist:
+        lines.append(f"📊 {hist}")
+
+    if brk:
+        lines.append(f"🚀 {brk}")
+
+    if mv or date:
+        parts = []
+        if mv:
+            parts.append(f"🏛市值 {mv}亿")
+        if date:
+            parts.append(f"📅 {date}")
+        lines.append("  ".join(parts))
+
+    return "\n".join(lines)
+
+
+# =====================================================
+# Unified message builder（Telegram / Email 共用）
 # =====================================================
 def build_unified_message(
     df: Optional[pd.DataFrame],
     file_path: Optional[str],
-    max_rows: int = 8,
+    max_rows: int = 10,
 ) -> Tuple[str, str]:
+
     hit_cnt = int(len(df)) if isinstance(df, pd.DataFrame) else 0
     title = f"📈 扫描完成：{hit_cnt} 条信号"
 
@@ -152,139 +239,69 @@ def build_unified_message(
 
     if isinstance(df, pd.DataFrame) and not df.empty:
         for _, row in df.head(max_rows).iterrows():
-            # 标题行：名称 + 代码
-            name_code = f"🔹 {row.get('名称','')} ({row.get('代码','')})"
-            lines.append(name_code)
-
-            for col in row.index:
-                if col in ["名称", "代码"]:
-                    continue
-                val_str = format_dict_or_json(row[col])
-                # 关键字段加 Emoji
-                if "价" in col or "当前" in col:
-                    lines.append(f"💰 {col}: {val_str}")
-                elif "涨幅" in col:
-                    lines.append(f"📈 {col}: {val_str}%")
-                elif "市值" in col:
-                    lines.append(f"🏦 {col}: {val_str} 亿")
-                elif "换手率" in col:
-                    lines.append(f"🔄 {col}: {val_str}%")
-
-                elif "SQZ" in col or "评分" in col:
-                    lines.append(f"🎯 {col}: {val_str}")
-                elif "止损" in col:
-                    lines.append(f"⚠️ {col}: {val_str}")
-                elif "ADX" in col:
-                    lines.append(f"📊 {col}: {val_str}")
-
-                elif "左波峰日期" in col:
-                    lines.append(f"📅 {col}: {val_str}")
-                elif "右波峰日期" in col:
-                    lines.append(f"⏰ {col}: {val_str}")
-                elif "EMA200" in col:
-                    lines.append(f"📈 {col}: {val_str}")
-
-                elif "红线" in col:
-                    lines.append(f"🔴 {col}: {val_str}")
-                elif "绿线" in col:
-                    lines.append(f"🟢 {col}: {val_str}")
-
-                else:
-                    lines.append(f"{col}: {val_str}")
-
-            lines.append("")  # 每条策略间空行
+            lines.append(build_tv_card(row))
+            lines.append("")
     else:
         lines.append("（无信号数据）")
 
     return title, "\n".join(lines)
 
+
 def clip_for_telegram(text: str, limit: int = 3800) -> str:
     return text if len(text) <= limit else text[:limit] + "\n...（已截断）"
 
+
 # =====================================================
-# Public notify entry
+# Notify entry
 # =====================================================
 def post_export_notify(
     file_path: Optional[str],
     df: Optional[pd.DataFrame],
-    max_rows_per_msg: int = 8,
+    max_rows_per_msg: int = 10,
 ) -> None:
-    try:
-        # Telegram 分批发送
-        if isinstance(df, pd.DataFrame) and not df.empty and SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
-            for start in range(0, len(df), max_rows_per_msg):
-                sub_df = df.iloc[start:start + max_rows_per_msg]
-                title, body = build_unified_message(sub_df, file_path)
-                tg_text = clip_for_telegram(f"{title}\n\n{body}")
 
-                send_telegram(
-                    bot_token=TELEGRAM_CONFIG.get("BOT_TOKEN", ""),
-                    chat_id=str(TELEGRAM_CONFIG.get("CHAT_ID", "")).strip(),
-                    text=tg_text,
-                    disable_web_page_preview=bool(
-                        TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True)
-                    ),
-                )
-                time.sleep(1)  # 避免频率限制
-        elif SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
-            # 空 DataFrame 或 None
-            title, body = build_unified_message(df, file_path)
-            tg_text = clip_for_telegram(f"{title}\n\n{body}")
+    if isinstance(df, pd.DataFrame) and not df.empty and SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
+        for start in range(0, len(df), max_rows_per_msg):
+            sub_df = df.iloc[start:start + max_rows_per_msg]
+            title, body = build_unified_message(sub_df, file_path)
             send_telegram(
-                bot_token=TELEGRAM_CONFIG.get("BOT_TOKEN", ""),
-                chat_id=str(TELEGRAM_CONFIG.get("CHAT_ID", "")).strip(),
-                text=tg_text,
-                disable_web_page_preview=bool(
-                    TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True)
-                ),
+                TELEGRAM_CONFIG["BOT_TOKEN"],
+                str(TELEGRAM_CONFIG["CHAT_ID"]).strip(),
+                clip_for_telegram(f"{title}\n\n{body}"),
+                TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True),
             )
+            time.sleep(1)
 
-        # Email 一次发送完整内容
-        if SYSTEM_CONFIG.get("ENABLE_EMAIL"):
-            title, body = build_unified_message(df, file_path)
-            send_email(
-                smtp_host=EMAIL_CONFIG.get("SMTP_HOST", ""),
-                smtp_port=int(EMAIL_CONFIG.get("SMTP_PORT", 465)),
-                use_ssl=bool(EMAIL_CONFIG.get("USE_SSL", True)),
-                username=EMAIL_CONFIG.get("USERNAME", ""),
-                password=EMAIL_CONFIG.get("PASSWORD", ""),
-                sender=EMAIL_CONFIG.get("FROM", ""),
-                to_list=[x for x in EMAIL_CONFIG.get("TO", []) if x],
-                subject=title,
-                body=body,
-                attachment_path=file_path,
-            )
+    if SYSTEM_CONFIG.get("ENABLE_EMAIL"):
+        title, body = build_unified_message(df, file_path)
+        send_email(
+            EMAIL_CONFIG["SMTP_HOST"],
+            int(EMAIL_CONFIG.get("SMTP_PORT", 465)),
+            EMAIL_CONFIG.get("USE_SSL", True),
+            EMAIL_CONFIG["USERNAME"],
+            EMAIL_CONFIG["PASSWORD"],
+            EMAIL_CONFIG["FROM"],
+            EMAIL_CONFIG["TO"],
+            title,
+            body,
+            file_path,
+        )
 
-    except Exception as e:
-        print(f"⚠️ Notify failed: {e}")
 
 # =====================================================
-# CSV 导出 + 通知接口
+# CSV export + notify
 # =====================================================
 def export_and_notify(df: Optional[pd.DataFrame]) -> Optional[str]:
-    file_path: Optional[str] = None
-    try:
-        if SYSTEM_CONFIG.get("ENABLE_EXPORT", True):
-            date_str = time.strftime('%Y%m%d')
-            save_dir = os.path.join(PATH_CONFIG["OUTPUT_FOLDER_BASE"], date_str)
-            os.makedirs(save_dir, exist_ok=True)
-            strategy_name = STRATEGY_CONFIG.get("RUN_STRATEGY", "strategy")
-            file_path = os.path.join(save_dir, f"{strategy_name}_{time.strftime('%H%M%S')}.csv")
-            encoding = SYSTEM_CONFIG.get("EXPORT_ENCODING", "utf-8-sig")
-            if isinstance(df, pd.DataFrame):
-                df.to_csv(file_path, index=False, encoding=encoding)
-            else:
-                with open(file_path, "w", encoding=encoding) as f:
-                    f.write("")
-            print(f"\n🎉 导出成功！文件路径: {file_path}")
-        else:
-            print("ℹ️ 已关闭导出开关（ENABLE_EXPORT=False），仅发送通知...")
-    except Exception as e:
-        print(f"⚠️ 导出 CSV 失败：{e}")
+    file_path = None
 
-    try:
-        post_export_notify(file_path=file_path, df=df)
-    except Exception as e:
-        print(f"⚠️ 导出后通知失败: {e}")
+    if SYSTEM_CONFIG.get("ENABLE_EXPORT", True):
+        date_str = time.strftime('%Y%m%d')
+        save_dir = os.path.join(PATH_CONFIG["OUTPUT_FOLDER_BASE"], date_str)
+        os.makedirs(save_dir, exist_ok=True)
+        strategy_name = STRATEGY_CONFIG.get("RUN_STRATEGY", "strategy")
+        file_path = os.path.join(save_dir, f"{strategy_name}_{time.strftime('%H%M%S')}.csv")
+        df.to_csv(file_path, index=False, encoding="utf-8-sig")
+        print(f"🎉 导出成功：{file_path}")
 
+    post_export_notify(file_path, df)
     return file_path

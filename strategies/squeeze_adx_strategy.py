@@ -125,13 +125,13 @@ def run_strategy(df, symbol):
             "代码": symbol,
             "现价": round(current_close, 2),
             "涨幅(%)": round(pct_chg, 2),
-            "连续挤压天数": prev_sqz_id,
-            "前6天绿色数": green_count,
+            "挤压天数": prev_sqz_id,
+            "绿色数": green_count,
             # 前6日柱状颜色和值
-            "前6天柱状图": color_value_cols,
+            "动能情况": color_value_cols,
             # ATR 动态止损
             "建议止损价": round(last_atr.get('atr_long_stop'), 2),
-            "最近是否ATH": is_ath
+            "是否ATH": is_ath
         }
 
     except Exception:
