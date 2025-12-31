@@ -118,6 +118,15 @@ def squeeze_momentum_indicator(
         600519  2025-04-16  1522.17  1545.71  1507.46  1529.20   3115605.0  4.834881e+09         ON  -35.621407       7     maroon
         600519  2025-04-17  1524.13  1546.20  1520.20  1539.82   2384605.0  3.733925e+09         ON  -25.492939       8     maroon
     """
+    df = df.copy()
+
+    # 设置日期列为索引列
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'date' in df.columns:
+            df.set_index('date', inplace=True)
+        else:
+            raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
+
     close, high, low = df['close'], df['high'], df['low']
 
     # 计算Bollinger Bands (BB)

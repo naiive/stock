@@ -115,6 +115,15 @@ def atr_indicator(
         600628  2025-12-19  9.00  9.77  8.88   9.11  121830916.0  1.129386e+09  0.370394  0.555590       10.325590       8.324410
     """
 
+    df = df.copy()
+
+    # 设置日期列为索引列
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'date' in df.columns:
+            df.set_index('date', inplace=True)
+        else:
+            raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
+
     length = INDICATOR_CONFIG.get("ATR", {}).get("length", length)
     multiplier = INDICATOR_CONFIG.get("ATR", {}).get("multiplier", multiplier)
     smoothing = INDICATOR_CONFIG.get("ATR", {}).get("smoothing", smoothing)

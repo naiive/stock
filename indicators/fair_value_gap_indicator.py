@@ -36,6 +36,13 @@ def fair_value_gap_indicator(
 
     df = df.copy()
 
+    # 设置日期列为索引列
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'date' in df.columns:
+            df.set_index('date', inplace=True)
+        else:
+            raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
+
     # -------------------------
     # Threshold 计算
     # -------------------------

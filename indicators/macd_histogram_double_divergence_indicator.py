@@ -26,16 +26,15 @@ date        code   open   high    low  close       volume        amount      mac
 2022-10-13  002352  42.19  42.98  42.06  42.51   11500925.0  5.270049e+08 -1.167078 -0.951134 -0.2159       0.065074       True  2022-09-26      -0.3252  2022-10-11      -0.2529
 2022-10-14  002352  44.19  46.28  44.04  46.00   39387470.0  1.935313e+09 -0.882118 -0.937331  0.0552       0.065148      False         NaT          NaN         NaT          NaN
     """
+
     df = df.copy()
-    df.columns = [c.lower() for c in df.columns]
 
-    required_cols = {'open', 'high', 'low', 'close', 'date'}
-    if not required_cols.issubset(df.columns):
-        raise ValueError(f"DataFrame 必须包含列: {required_cols}")
-
-    # 统一日期格式
-    df['date'] = pd.to_datetime(df['date'])
-    df.set_index('date', inplace=True)
+    # 设置日期列为索引列
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'date' in df.columns:
+            df.set_index('date', inplace=True)
+        else:
+            raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
 
     # ──────────────
     # 1. MACD计算

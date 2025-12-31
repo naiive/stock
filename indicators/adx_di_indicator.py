@@ -51,6 +51,16 @@ def adx_di_indicator(
         600218  2025-02-06   7.64   7.76   7.62   7.76   7486197.0  5.821225e+07  21.635697  23.167209   4.484860
         600218  2025-02-07   7.78   7.99   7.76   7.90   9639047.0  7.676530e+07  25.890815  21.909249   4.198591
     """
+
+    df = df.copy()
+
+    # 设置日期列为索引列
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'date' in df.columns:
+            df.set_index('date', inplace=True)
+        else:
+            raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
+
     length = INDICATOR_CONFIG.get("ADX", {}).get("length", length)
     threshold = INDICATOR_CONFIG.get("ADX", {}).get("threshold", threshold)
 

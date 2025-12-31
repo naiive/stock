@@ -30,6 +30,15 @@ def ma_ribbon_indicator(
         600628  2025-12-18  8.00  8.89  7.99   8.89   86095168.0  7.394343e+08  7.523586
         600628  2025-12-19  9.00  9.77  8.88   9.11  121830916.0  1.129386e+09  7.539371
     """
+    df = df.copy()
+
+    # 设置日期列为索引列
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'date' in df.columns:
+            df.set_index('date', inplace=True)
+        else:
+            raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
+
     length = INDICATOR_CONFIG.get("EMA", {}).get("length", length)
 
     col_name = f"ema_{length}"

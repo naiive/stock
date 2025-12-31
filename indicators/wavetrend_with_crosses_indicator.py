@@ -45,6 +45,16 @@ def wavetrend_with_crosses_indicator(
     600519  2025-03-21  1568.26  1581.21  1538.67  1543.50   3361430.0  5.324973e+09   57.717900   62.716781  -4.998881         no
 
     """
+
+    df = df.copy()
+
+    # 设置日期列为索引列
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if 'date' in df.columns:
+            df.set_index('date', inplace=True)
+        else:
+            raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
+
     channelLength = INDICATOR_CONFIG.get("WTC", {}).get("channelLength", channelLength)
     averageLength = INDICATOR_CONFIG.get("WTC", {}).get("averageLength", averageLength)
     smaLength = INDICATOR_CONFIG.get("WTC", {}).get("smaLength", smaLength)
