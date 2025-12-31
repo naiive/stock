@@ -21,7 +21,7 @@ supColor    = input.color(color.new(#233dee, 0), "支撑线颜色", group=group_
 // ================= 2. EMA 参数 =======================
 // =====================================================
 group_ema   = "2. EMA Trend"
-showEMA     = input.bool(true, "显示 EMA200", group=group_ema)
+showEMA     = input.bool(true, "显示 EMA", group=group_ema)
 ema_len     = input.int(200, "EMA 长度", minval = 1, group=group_ema)
 ema_col     = input.color(color.orange, "EMA 颜色", group=group_ema)
 
