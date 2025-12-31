@@ -8,8 +8,7 @@ from strategies import (
     squeeze_divergence_strategy,
     macd_histogram_double_divergence_strategy,
     cross_strategy,
-    aroon_oscillator_strategy,
-    fair_value_gap_strategy
+    aroon_oscillator_strategy
 )
 
 STRATEGY_REGISTRY = {
@@ -26,7 +25,5 @@ STRATEGY_REGISTRY = {
     # 交叉买入型号 策略【⭐⭐⭐⭐】
     "cross": cross_strategy.run_strategy,
     # 底部-100是否新低 策略【⭐⭐⭐】
-    "aroon_oscillator": aroon_oscillator_strategy.run_strategy,
-    # 是否有fvg 策略【⭐⭐】
-    "fvg": fair_value_gap_strategy.run_strategy
+    "aroon_oscillator": aroon_oscillator_strategy.run_strategy
 }
