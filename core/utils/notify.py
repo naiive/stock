@@ -4,6 +4,7 @@
 - 自动适配不固定列
 - CSV → Scan 卡片风格输出
 - Telegram / Email 内容完全一致
+- ✅ Telegram 分页显示，总览只在第一页出现
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import os
 import ssl
 import json
 import time
+import math
 import smtplib
 import urllib.request
 import urllib.parse
@@ -24,6 +26,7 @@ from email.mime.multipart import MIMEMultipart
 from email import encoders
 
 from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG, PATH_CONFIG, STRATEGY_CONFIG
+from core.map.emoji_map import hist_emoji_map, break_emoji_map
 
 # =====================================================
 # Email
@@ -115,21 +118,6 @@ def send_telegram(
         return False
 
 
-# =====================================================
-# Emoji 解析工具
-# =====================================================
-HIST_EMOJI_MAP = {
-    "绿亮": "🟢",
-    "绿暗": "🟢",
-    "红亮": "🔴",
-    "红暗": "🔴",
-}
-
-BREAK_EMOJI_MAP = {
-    "高": "⬆️",
-    "低": "⬇️",
-}
-
 
 def parse_histogram_emoji(val) -> str:
     if not val or pd.isna(val):
@@ -137,7 +125,7 @@ def parse_histogram_emoji(val) -> str:
     parts = str(val).split("-")
     out = []
     for p in parts:
-        for k, e in HIST_EMOJI_MAP.items():
+        for k, e in hist_emoji_map.items():
             if p.startswith(k):
                 out.append(e)
                 break
@@ -147,7 +135,7 @@ def parse_histogram_emoji(val) -> str:
 def parse_break_emoji(val) -> str:
     if not val or pd.isna(val):
         return ""
-    return "".join(BREAK_EMOJI_MAP.get(x, "") for x in str(val).split("-"))
+    return "".join(break_emoji_map.get(x, "") for x in str(val).split("-"))
 
 
 def fmt_pct(val) -> str:
@@ -181,7 +169,6 @@ def build_tv_card(row: pd.Series) -> str:
     mv = row.get("总市值(亿)", "")
     date = str(row.get("日期", ""))[5:10]
 
-    # 拼接卡片
     lines = []
 
     if name or code:
@@ -224,25 +211,37 @@ def build_tv_card(row: pd.Series) -> str:
 def build_unified_message(
     df: Optional[pd.DataFrame],
     file_path: Optional[str],
-    max_rows: int = 10,
+    total_cnt: int = 0,
+    page_no: int = 1,
+    page_cnt: int = 1,
+    is_first_page: bool = True,
 ) -> Tuple[str, str]:
 
-    hit_cnt = int(len(df)) if isinstance(df, pd.DataFrame) else 0
-    title = f"📈 扫描完成：{hit_cnt} 条信号"
-
-    lines = [
-        f"时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
-        f"命中：{hit_cnt}",
-        f"文件：{os.path.basename(file_path) if file_path else '<未落盘>'}",
-        "",
-    ]
+    if is_first_page:
+        title = f"📈 扫描完成：{total_cnt} 条信号"
+        lines = [
+            f"时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"文件：{os.path.basename(file_path) if file_path else '<未落盘>'}",
+            "",
+            f"📄 第 {page_no}/{page_cnt} 页",
+            "────────────────",
+            "",
+        ]
+    else:
+        title = f"📄 扫描结果 · 第 {page_no}/{page_cnt} 页"
+        lines = [
+            f"📄 扫描结果 · 第 {page_no}/{page_cnt} 页",
+            "────────────────",
+            "",
+        ]
 
     if isinstance(df, pd.DataFrame) and not df.empty:
-        for _, row in df.head(max_rows).iterrows():
+        for _, row in df.iterrows():
             lines.append(build_tv_card(row))
             lines.append("")
     else:
-        lines.append("（无信号数据）")
+        if is_first_page:
+            lines.append("（无信号数据）")
 
     return title, "\n".join(lines)
 
@@ -261,9 +260,19 @@ def post_export_notify(
 ) -> None:
 
     if isinstance(df, pd.DataFrame) and not df.empty and SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
-        for start in range(0, len(df), max_rows_per_msg):
+        total_cnt = len(df)
+        page_cnt = math.ceil(total_cnt / max_rows_per_msg)
+
+        for idx, start in enumerate(range(0, total_cnt, max_rows_per_msg), start=1):
             sub_df = df.iloc[start:start + max_rows_per_msg]
-            title, body = build_unified_message(sub_df, file_path)
+            title, body = build_unified_message(
+                sub_df,
+                file_path,
+                total_cnt=total_cnt,
+                page_no=idx,
+                page_cnt=page_cnt,
+                is_first_page=(idx == 1),
+            )
             send_telegram(
                 TELEGRAM_CONFIG["BOT_TOKEN"],
                 str(TELEGRAM_CONFIG["CHAT_ID"]).strip(),
