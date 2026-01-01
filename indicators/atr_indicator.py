@@ -127,10 +127,6 @@ def atr_indicator(
         else:
             raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
 
-    length = INDICATOR_CONFIG.get("ATR", {}).get("length", length)
-    multiplier = INDICATOR_CONFIG.get("ATR", {}).get("multiplier", multiplier)
-    smoothing = INDICATOR_CONFIG.get("ATR", {}).get("smoothing", smoothing)
-
     # --- True Range ---
     tr = true_range(df)
 
