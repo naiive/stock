@@ -206,15 +206,15 @@ def build_tv_card(row: pd.Series) -> str:
         lines.append(f"🧨 挤压 {squeeze_days} 天     📍 {ath}")
 
     if hist:
-        lines.append(f"📊 {hist}")
+        lines.append(f"📊 动能 {hist}")
 
     if brk:
-        lines.append(f"🚀 {brk}")
+        lines.append(f"🚀 趋势 {brk}")
 
     if mv or date:
         parts = []
         if mv:
-            parts.append(f"🏛市值 {mv}亿")
+            parts.append(f"🏛 市值 {mv}亿")
         if date:
             parts.append(f"📅 {date}")
         lines.append("  ".join(parts))
@@ -276,9 +276,14 @@ def post_export_notify(
 ) -> None:
 
     if isinstance(df, pd.DataFrame) and not df.empty and SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
-        # ===== 在发送前绿色动能数降序排序 =====
-        if "绿色动能" in df.columns:
+        # 排序
+        if "绿色动能" in df.columns and "挤压天数" in df.columns:
+            # 先按绿色动能降序，再按挤压天数降序
+            df = df.sort_values(by=["绿色动能", "挤压天数"], ascending=[False, False])
+        elif "绿色动能" in df.columns:
             df = df.sort_values(by="绿色动能", ascending=False)
+        elif "挤压天数" in df.columns:
+            df = df.sort_values(by="挤压天数", ascending=False)
 
         total_cnt = len(df)
         page_cnt = math.ceil(total_cnt / max_rows_per_msg)
