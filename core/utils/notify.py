@@ -192,8 +192,7 @@ def build_tv_card(row: pd.Series) -> str:
         lines.append(f"💹 {name} · {code_str}")
 
     if price:
-        lines.append(f"💰 {price}（{chg}）🗓 年 {ytd}")
-
+        lines.append(f"💰 {price} ({chg})  📅 {date}")
     if turnover or pe:
         parts = []
         if turnover:
@@ -203,7 +202,7 @@ def build_tv_card(row: pd.Series) -> str:
         lines.append("       ".join(parts))
 
     if squeeze_days:
-        lines.append(f"🧨 挤压 {squeeze_days} 天     📍 {ath}")
+        lines.append(f"🧨 挤压 {squeeze_days} 天       📍 {ath}")
 
     if hist:
         lines.append(f"📊 动能 {hist}")
@@ -216,7 +215,7 @@ def build_tv_card(row: pd.Series) -> str:
         if mv:
             parts.append(f"🏛 市值 {mv}亿")
         if date:
-            parts.append(f"📅 {date}")
+            parts.append(f"🗓 年涨 {ytd}")
         lines.append("  ".join(parts))
 
     return "\n".join(lines)
