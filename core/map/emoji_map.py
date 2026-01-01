@@ -14,3 +14,9 @@ break_emoji_map = {
     "高": "⬆️",
     "低": "⬇️",
 }
+
+# yes or no
+yn_emoji_map = {
+    "yes": "✔",
+    "no": "✖",
+}

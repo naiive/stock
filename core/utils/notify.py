@@ -26,7 +26,7 @@ from email.mime.multipart import MIMEMultipart
 from email import encoders
 
 from conf.config import SYSTEM_CONFIG, EMAIL_CONFIG, TELEGRAM_CONFIG, PATH_CONFIG, STRATEGY_CONFIG
-from core.map.emoji_map import hist_emoji_map, break_emoji_map
+from core.map.emoji_map import hist_emoji_map, break_emoji_map, yn_emoji_map
 
 # =====================================================
 # Email
@@ -163,16 +163,18 @@ def build_tv_card(row: pd.Series) -> str:
     squeeze_days = row.get("挤压天数", "")
 
     ath_val = str(row.get("是否ATH", "")).strip()
-    ath = "YES ATH" if ath_val == "是" else "No ATH"
+    ath = yn_emoji_map.get("yes") if ath_val == "是" else yn_emoji_map.get("no")
+
+    volume_up_value = str(row.get("是否放量", "")).strip()
+    volume_up = yn_emoji_map.get("yes") if volume_up_value == "是" else yn_emoji_map.get("no")
 
     hist = parse_histogram_emoji(row.get("动能情况"))
     brk = parse_break_emoji(row.get("突破趋势"))
 
     mv = row.get("总市值(亿)", "")
-    date = str(row.get("日期", ""))[5:10]
+    date = str(row.get("日期", ""))
 
     lines = []
-
     code_str = ""
     if code:
         if code.startswith("60"):
@@ -188,21 +190,24 @@ def build_tv_card(row: pd.Series) -> str:
         else:
             code_str = code
 
+    if date:
+        lines.append(f"📅 日期 {date}")
+
     if name or code:
-        lines.append(f"💹 {name} · {code_str}")
+        lines.append(f"💹 代码 {name} · {code_str}")
 
     if price:
-        lines.append(f"💰 {price} ({chg})  📅 {date}")
+        lines.append(f"💰 价格 {price} ({chg}) | 放量 {volume_up}")
     if turnover or pe:
         parts = []
         if turnover:
             parts.append(f"🔄 换手 {turnover}%")
         if pe:
-            parts.append(f"📐 PE {pe}")
-        lines.append("       ".join(parts))
+            parts.append(f"PE {pe}")
+        lines.append(" | ".join(parts))
 
     if squeeze_days:
-        lines.append(f"🧨 挤压 {squeeze_days} 天       📍 {ath}")
+        lines.append(f"🧨 挤压 {squeeze_days} 天 | ATH {ath}")
 
     if hist:
         lines.append(f"📊 动能 {hist}")
@@ -215,8 +220,8 @@ def build_tv_card(row: pd.Series) -> str:
         if mv:
             parts.append(f"🏛 市值 {mv}亿")
         if date:
-            parts.append(f"🗓 年涨 {ytd}")
-        lines.append("  ".join(parts))
+            parts.append(f"年涨 {ytd}")
+        lines.append(" | ".join(parts))
 
     return "\n".join(lines)
 

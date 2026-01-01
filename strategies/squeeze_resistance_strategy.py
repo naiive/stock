@@ -5,6 +5,8 @@ import pandas as pd
 from core.map.squeeze_color_map import squeeze_color_map
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 from indicators.support_resistance_breaks_indicator import support_resistance_breaks_indicator
+from indicators.volume_expand_up_indiccator import volume_expand_up_indicator
+
 
 def run_strategy(df, symbol):
     """
@@ -115,7 +117,13 @@ def run_strategy(df, symbol):
         color_value_cols = "-".join(color_value_list)
 
         # ==================================================
-        # 10.返回结果
+        # 10.是否放量
+        # ==================================================
+        df = volume_expand_up_indicator(df)
+        is_volume_up = "是" if df.iloc[-1].get("is_volume_up") else "否"
+
+        # ==================================================
+        # 11.返回结果
         # ==================================================
         return {
             "日期": current.name.strftime('%Y-%m-%d'),
@@ -127,6 +135,7 @@ def run_strategy(df, symbol):
             # 前6日柱状颜色和值
             "动能情况": color_value_cols,
             "突破趋势": break_trend,
+            "是否放量": is_volume_up,
             "是否ATH": is_ath
         }
 
