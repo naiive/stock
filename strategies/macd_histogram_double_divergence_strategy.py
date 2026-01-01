@@ -5,13 +5,7 @@ from indicators.atr_indicator import atr_indicator
 
 def run_strategy(df, symbol):
     """
-    A股全市场扫描策略
-    策略：
-         macd histogram 双峰底背离
-
-    :param df: DataFrame
-    :param symbol: 股票代码
-    :return: 命中则返回字典，未命中返回 None
+    策略：macd histogram 双峰底背离
     """
     try:
         # 1. 基础数据量检查 (确保能支撑滚动计算)

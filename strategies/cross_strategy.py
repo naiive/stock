@@ -7,12 +7,7 @@ from indicators.ma_ribbon_indicator import ma_ribbon_indicator
 
 def run_strategy(df, symbol):
     """
-    A股全市场扫描策略
-    策略：
-         cross 为 green 且在 超卖区 wtc_red < -45
-    :param df: DataFrame
-    :param symbol: 股票代码
-    :return: 命中则返回字典，未命中返回 None
+    策略：cross 为 green 且在 超卖区 wtc_red < -45
     """
     try:
         # 1. 基础数据量检查 (确保能支撑滚动计算)

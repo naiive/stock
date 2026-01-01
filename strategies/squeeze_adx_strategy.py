@@ -9,14 +9,11 @@ from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 
 def run_strategy(df, symbol):
     """
-    A股全市场扫描策略（含 SQZ 释放评分）
-
     核心思想：
     1. 大趋势向上（EMA200 + ADX）
     2. 波动被长期压缩（SQZ ON ≥ 6）
     3. 当天刚释放（ON → OFF）
     4. 第一根亮绿动能柱
-    5. 用前 6 日柱状颜色给“释放质量”打分
     """
     try:
         # ==========================================================
