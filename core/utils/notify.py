@@ -197,7 +197,7 @@ def build_tv_card(row: pd.Series) -> str:
     if turnover or pe:
         parts = []
         if turnover:
-            parts.append(f"🔄 换 {turnover}%")
+            parts.append(f"🔄 换手 {turnover}%")
         if pe:
             parts.append(f"📐 PE {pe}")
         lines.append("       ".join(parts))
