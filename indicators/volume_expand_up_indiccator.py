@@ -8,7 +8,6 @@
 """
 
 import pandas as pd
-from conf.config import INDICATOR_CONFIG
 
 def volume_expand_up_indicator(
     df: pd.DataFrame,
