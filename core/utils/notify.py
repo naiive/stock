@@ -100,6 +100,7 @@ def send_telegram(
     chat_id: str,
     text: str,
     disable_web_page_preview: bool = True,
+    parse_mode: str = "HTML",
 ) -> bool:
     try:
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -107,6 +108,7 @@ def send_telegram(
             "chat_id": chat_id,
             "text": text,
             "disable_web_page_preview": disable_web_page_preview,
+            "parse_mode": parse_mode,
         }
         resp = _http_post_form(url, payload)
         if not resp.get("ok"):
@@ -149,7 +151,7 @@ def fmt_pct(val) -> str:
 # =====================================================
 def build_tv_card(row: pd.Series) -> str:
     name = row.get("名称", "")
-    code = row.get("代码", "")
+    code = str(row.get("代码", ""))  # 确保是字符串
 
     price = row.get("收盘价", row.get("现价", ""))
     chg = fmt_pct(row.get("涨幅(%)"))
@@ -171,8 +173,23 @@ def build_tv_card(row: pd.Series) -> str:
 
     lines = []
 
+    code_str = ""
+    if code:
+        if code.startswith("60"):
+            tv_prefix = "SSE"
+        elif code.startswith("00") or code.startswith("30"):
+            tv_prefix = "SZSE"
+        else:
+            tv_prefix = ""
+
+        if tv_prefix:
+            tv_link = f"https://cn.tradingview.com/chart/?symbol={tv_prefix}%3A{code}"
+            code_str = f'<a href="{tv_link}">{code}</a>'
+        else:
+            code_str = code
+
     if name or code:
-        lines.append(f"💹 {name} · {code}")
+        lines.append(f"💹 {name} · {code_str}")
 
     if price:
         lines.append(f"💰 {price}（{chg}）🗓 年 {ytd}")
@@ -259,6 +276,10 @@ def post_export_notify(
 ) -> None:
 
     if isinstance(df, pd.DataFrame) and not df.empty and SYSTEM_CONFIG.get("ENABLE_TELEGRAM"):
+        # ===== 在发送前绿色动能数降序排序 =====
+        if "绿色动能" in df.columns:
+            df = df.sort_values(by="绿色动能", ascending=False)
+
         total_cnt = len(df)
         page_cnt = math.ceil(total_cnt / max_rows_per_msg)
 
