@@ -2,10 +2,11 @@
 // EMA200 + ADX Trend Strength (BG)
 // + ATR Stop Loss Finder (v6)
 // + S/R Levels [LuxAlgo Integrated]
+// + WaveTrend Bar Color (LazyBear Logic)
 // =====================================================
 
 //@version=6
-indicator("EMA + ADX + ATR + SR", overlay = true, max_bars_back=1000)
+indicator("EMA + ADX + ATR + SR + WT", overlay = true, max_bars_back=1000)
 
 // =====================================================
 // ================= 1. 支撑压力位参数 ==================
@@ -49,6 +50,16 @@ showTable    = input.bool(true, "显示 ATR 信息表格", group=group_atr)
 atr_col_long  = input.color(color.teal, "ATR 多头线颜色", group=group_atr)
 atr_col_short = input.color(color.red,  "ATR 空头线颜色", group=group_atr)
 atr_text_col  = input.color(color.blue, "表格文字颜色", group=group_atr)
+
+// =====================================================
+// ================= 5. WaveTrend 柱体变色参数 ============
+// =====================================================
+group_wt     = "5. WaveTrend Bar Color"
+showWTColor  = input.bool(true, "开启 WT 交叉柱体变色", group=group_wt)
+wt_n1        = input.int(10, "WT 管道长度", group=group_wt)
+wt_n2        = input.int(21, "WT 平均长度", group=group_wt)
+color_bull   = input.color(color.yellow, "多头信号颜色 (Cross Up)", group=group_wt)
+color_bear   = input.color(color.aqua,   "空头信号颜色 (Cross Down)", group=group_wt)
 
 // =====================================================
 // ================= 逻辑计算与绘图 =====================
@@ -99,6 +110,20 @@ atr_long  = low  - atr_val
 plot(showATR ? atr_short : na, "ATR Short Stop", atr_col_short, linewidth = 1, trackprice = show_price_line)
 plot(showATR ? atr_long : na, "ATR Long Stop", atr_col_long, linewidth = 1, trackprice = show_price_line)
 
+// --- [WaveTrend 计算逻辑] ---
+ap = hlc3
+esa = ta.ema(ap, wt_n1)
+d_wt = ta.ema(math.abs(ap - esa), wt_n1)
+ci = (ap - esa) / (0.015 * d_wt)
+wt1 = ta.ema(ci, wt_n2)
+wt2 = ta.sma(wt1, 4)
+
+// --- [柱体变色逻辑逻辑实现] ---
+// 原逻辑：cross(wt1, wt2) ? (wt2 - wt1 > 0 ? aqua : yellow) : na
+bool isCross = ta.cross(wt1, wt2)
+color wt_bar_color = isCross ? (wt2 - wt1 > 0 ? color_bear : color_bull) : na
+barcolor(showWTColor ? wt_bar_color : na, title="WaveTrend Bar Color")
+
 // --- [ATR 信息表格] ---
 var table infoTable = table.new(position.bottom_center, 3, 1, border_width = 2)
 if barstate.islast and showTable
@@ -106,4 +131,4 @@ if barstate.islast and showTable
     table.cell(infoTable, 1, 0, "H: " + str.tostring(atr_short, "#.##"), text_color = atr_col_short)
     table.cell(infoTable, 2, 0, "L: " + str.tostring(atr_long, "#.##"), text_color = atr_col_long)
 else if barstate.islast and not showTable
-    table.delete(infoTable) // 如果关闭开关，移除表格
+    table.delete(infoTable)
