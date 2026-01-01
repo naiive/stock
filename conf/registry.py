@@ -18,6 +18,6 @@ STRATEGY_REGISTRY = {
     "macd_histogram_double_divergence": macd_histogram_double_divergence_strategy.run_strategy,
     # 交叉买入型号 策略【⭐⭐⭐⭐】
     "cross": cross_strategy.run_strategy,
-    # 底部-100是否新低 策略【⭐⭐⭐】
+    # 底部-100是否新低 策略【⭐⭐⭐⭐】
     "aroon_oscillator": aroon_oscillator_strategy.run_strategy
 }

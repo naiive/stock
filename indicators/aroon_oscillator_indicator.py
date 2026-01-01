@@ -10,10 +10,7 @@ import numpy as np
 # ============================================================
 """
 
-def aroon_oscillator_indicator(
-        df: pd.DataFrame,
-        length: int = 14
-):
+def aroon_oscillator_indicator(df: pd.DataFrame,length: int = 14):
     """
       返回字段：
       - aroon_up
@@ -43,39 +40,33 @@ def aroon_oscillator_indicator(
         else:
             raise ValueError("DataFrame 没有 'date' 列，也没有日期索引，无法设置索引")
 
-    # =========================
-    # 1. 计算 bars since high / low（无未来函数）
-    # =========================
-    def bars_since_high(x):
-        return len(x) - 1 - np.argmax(x)
+        # 确保 length 是整数
+        length = int(length)
 
-    def bars_since_low(x):
-        return len(x) - 1 - np.argmin(x)
+        # 这里的关键是 rolling(length + 1)
+        # 因为 Aroon 计算的是“过去 n 个周期内”，包含当前点共有 n+1 个点
 
-    bars_high = (
-        df['high']
-        .rolling(length)
-        .apply(bars_since_high, raw=True)
-    )
+        def bars_since_high(x):
+            # np.argmax 返回的是第一个最大值的索引
+            # 在 TV 中，如果有多个相同的最高价，通常取最近的一个
+            # 因此我们用 argmax 处理反转后的数组，或者直接用下面的逻辑：
+            return (len(x) - 1) - np.where(x == np.max(x))[0][-1]
 
-    bars_low = (
-        df['low']
-        .rolling(length)
-        .apply(bars_since_low, raw=True)
-    )
+        def bars_since_low(x):
+            return (len(x) - 1) - np.where(x == np.min(x))[0][-1]
 
-    # =========================
-    # 2. Aroon Up / Down
-    # =========================
-    df['aroon_up'] = 100 * (length - bars_high) / length
-    df['aroon_down'] = 100 * (length - bars_low) / length
+        # 使用 window = length + 1 来匹配 TradingView 的 14 周期逻辑
+        rolling_window = length + 1
 
-    # =========================
-    # 3. Aroon Oscillator
-    # =========================
-    df['aroon_osc'] = df['aroon_up'] - df['aroon_down']
+        df['bars_high'] = df['high'].rolling(rolling_window).apply(bars_since_high, raw=True)
+        df['bars_low'] = df['low'].rolling(rolling_window).apply(bars_since_low, raw=True)
 
-    return df
+        # 计算公式：100 * (n - bars_since) / n
+        df['aroon_up'] = 100 * (length - df['bars_high']) / length
+        df['aroon_down'] = 100 * (length - df['bars_low']) / length
+        df['aroon_osc'] = df['aroon_up'] - df['aroon_down']
+
+        return df
 
 if __name__ == "__main__":
     pd.set_option("display.max_rows", None)
