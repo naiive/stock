@@ -242,7 +242,7 @@ def build_unified_message(
         title = f"📈 扫描完成：{total_cnt} 条信号"
         lines = [
             f"时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
-            f"文件：{os.path.basename(file_path) if file_path else '<未落盘>'}",
+            f"文件：{os.path.splitext(os.path.basename(file_path))[0] if file_path else '<未落盘>'}"
             "",
             f"📄 第 {page_no}/{page_cnt} 页",
             "────────────────",
