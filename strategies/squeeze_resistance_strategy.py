@@ -91,8 +91,8 @@ def run_strategy(df, symbol):
         # ==================================================
         # 9.信号前6天的SQZMOM根柱子颜色和值（顺序：前6、5、4、3、2、1）
         # ==================================================
-        raw_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()[::-1]
-        raw_values = df['sqz_hvalue'].iloc[-7:-1].tolist()[::-1]
+        raw_colors = df['sqz_hcolor'].iloc[-7:-1].tolist()
+        raw_values = df['sqz_hvalue'].iloc[-7:-1].tolist()
 
         color_value_list = []
         green_count = 0
@@ -115,6 +115,7 @@ def run_strategy(df, symbol):
 
             color_value_list.append(f"{color_str}[{value_str}]")
         color_value_cols = "-".join(color_value_list)
+        print(symbol + color_value_cols)
 
         # ==================================================
         # 10.是否放量
