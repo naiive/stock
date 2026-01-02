@@ -92,9 +92,13 @@ stock/
 安装建议（示例）：
 
 ```bash
-python3 -m venv venv311
-source venv311/bin/activate
-pip install -U pip
+
+~/Desktop $ python3.11 -m venv /Users/xxx/Desktop/stock/venv311
+
+source /Users/xxx/Desktop/stock/venv311/bin/activate
+
+deactivate
+
 pip install pandas numpy sqlalchemy pymysql akshare aiohttp requests python-telegram-bot
 ```
 
@@ -208,23 +212,16 @@ TELEGRAM_CONFIG = {
 }
 ```
 
-小贴士：为安全起见，建议将敏感信息（DB 密码、邮箱授权码、Bot Token）放入环境变量，并在 `config.py` 中读取。
-
 ---
 
 ## 策略清单与说明（conf/registry.py）
 
 已内置并注册的策略（可在 `STRATEGY_CONFIG.RUN_STRATEGY` 中选择）：
 
-- `squeeze`：综合 Squeeze（挤压释放）策略；
-- `squeeze_adx`：Squeeze + ADX 强势过滤；
 - `squeeze_resistance`：Squeeze + 突破前高；
-- `squeeze_red_cover`：Squeeze 红色覆盖挤压释放；
-- `squeeze_divergence`：Squeeze 底背离；
 - `macd_histogram_double_divergence`：MACD 柱双峰底背离；
 - `cross`：交叉类买入信号；
 - `aroon_oscillator`：Aroon -100 新低判断；
-- `fvg`：Fair Value Gap 缺口检测。
 
 新增策略步骤：
 
