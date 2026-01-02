@@ -3,6 +3,7 @@
 // + ATR Stop Loss Finder (v6)
 // + S/R Levels [LuxAlgo Integrated]
 // + WaveTrend Bar Color (LazyBear Logic)
+// + Multi EMA Extension
 // =====================================================
 
 //@version=6
@@ -22,9 +23,19 @@ supColor    = input.color(color.new(#233dee, 0), "支撑线颜色", group=group_
 // ================= 2. EMA 参数 =======================
 // =====================================================
 group_ema   = "2. EMA Trend"
-showEMA     = input.bool(true, "显示 EMA", group=group_ema)
-ema_len     = input.int(200, "EMA 长度", minval = 1, group=group_ema)
-ema_col     = input.color(color.orange, "EMA 颜色", group=group_ema)
+showEMA     = input.bool(true, "显示 EMA 组", group=group_ema)
+
+// EMA 1
+ema_len     = input.int(200, "EMA 1 长度", minval = 1, group=group_ema)
+ema_col     = input.color(color.orange, "EMA 1 颜色", group=group_ema)
+
+// EMA 2
+ema2_len    = input.int(50, "EMA 2 长度", minval = 1, group=group_ema)
+ema2_col    = input.color(#00ffff, "EMA 2 颜色", group=group_ema)
+
+// EMA 3
+ema3_len    = input.int(100, "EMA 3 长度", minval = 1, group=group_ema)
+ema3_col    = input.color(#ff00ff, "EMA 3 颜色", group=group_ema)
 
 // =====================================================
 // ================= 3. ADX 参数 =======================
@@ -77,9 +88,14 @@ float plotLow  = showSR and not lowChanged  ? lowLevel  : na
 plot(plotHigh, color=resColor, linewidth=3, offset=-(rightBars + 1), title="Resistance", style=plot.style_linebr)
 plot(plotLow, color=supColor, linewidth=3, offset=-(rightBars + 1), title="Support", style=plot.style_linebr)
 
-// --- [EMA200] ---
-ema_val = ta.ema(close, ema_len)
-plot(showEMA ? ema_val : na, "EMA200", color = ema_col, linewidth = 2)
+// --- [EMA Group] ---
+ema_val  = ta.ema(close, ema_len)
+ema2_val = ta.ema(close, ema2_len)
+ema3_val = ta.ema(close, ema3_len)
+
+plot(showEMA ? ema_val  : na, "EMA 1", color = ema_col,  linewidth = 2)
+plot(showEMA ? ema2_val : na, "EMA 2", color = ema2_col, linewidth = 2)
+plot(showEMA ? ema3_val : na, "EMA 3", color = ema3_col, linewidth = 2)
 
 // --- [ADX 背景] ---
 trueRange = math.max(math.max(high - low, math.abs(high - nz(close[1]))), math.abs(low - nz(close[1])))
@@ -119,7 +135,6 @@ wt1 = ta.ema(ci, wt_n2)
 wt2 = ta.sma(wt1, 4)
 
 // --- [柱体变色逻辑逻辑实现] ---
-// 原逻辑：cross(wt1, wt2) ? (wt2 - wt1 > 0 ? aqua : yellow) : na
 bool isCross = ta.cross(wt1, wt2)
 color wt_bar_color = isCross ? (wt2 - wt1 > 0 ? color_bear : color_bull) : na
 barcolor(showWTColor ? wt_bar_color : na, title="WaveTrend Bar Color")
