@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import pandas as pd
 from sqlalchemy import create_engine, Engine
 from datetime import datetime
@@ -19,7 +22,6 @@ TABLE_NAME = conf.TABLE_CONFIG["QUERY_DAILY_TABLE"]
 # **全局变量：存储唯一的 Engine 实例**
 # 使用单例模式的关键：确保 Engine 只被创建一次
 _GLOBAL_DB_ENGINE: Optional[Engine] = None
-
 
 # =========================================================
 # 2. 数据库连接引擎 (单例实现)
@@ -118,11 +120,6 @@ def stock_zh_a_daily_mysql(
     except Exception as e:
         print(f"查询数据库失败: {e}")
         return pd.DataFrame()
-
-
-# =========================================================
-# 4. 示例用法
-# =========================================================
 
 if __name__ == '__main__':
     print("--- 正在测试查询接口（首次调用将创建 Engine）---")

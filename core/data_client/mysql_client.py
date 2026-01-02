@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Module: MySQLClient
 Description: 数据库访问层。基于 SQLAlchemy 构建高效连接池，负责从本地 MySQL 读取历史日线数据。

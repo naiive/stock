@@ -1,14 +1,14 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import sys
 import os
 import datetime
-
 
 class LogRedirector:
     """
     日志重定向工具：同时将 stdout 输出到终端和按日期生成的文件中。
     """
-
     def __init__(self, log_folder="logs"):
         # 路径：project_root/logs/YYYYMMDD/
         self.today_str = datetime.datetime.now().strftime('%Y%m%d')

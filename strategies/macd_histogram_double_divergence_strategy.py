@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 from indicators.macd_histogram_double_divergence_indicator import macd_histogram_double_divergence_indicator
@@ -40,7 +41,7 @@ def run_strategy(df, symbol):
                 "建议止损价": round(last_atr.get('atr_long_stop'), 2)
             }
 
-    except Exception as e:
+    except Exception:
         return None
 
     return None

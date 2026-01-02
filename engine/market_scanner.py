@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Module: MarketScanner
 Description: 全市场异步扫描引擎。采用 "Async IO + ThreadPool Multi-threading" 混合架构。
@@ -18,7 +20,6 @@ class MarketScanner:
     """
     扫描调度引擎类
     """
-
     def __init__(self):
         # 初始化数据处理器，内部包含数据库和 API 客户端
         self.handler = DataHandler()

@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Module: AsyncDispatcher
 Description: 高性能异步并发调度工具 (Async IO + ThreadPoolExecutor)。
@@ -13,7 +15,6 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Sequence, Any, Callable, List
 from tqdm import tqdm
 from conf.config import SYSTEM_CONFIG
-
 
 async def run_dispatch(
         symbols: Sequence[str],

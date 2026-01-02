@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import time
 import functools
 
@@ -24,7 +26,6 @@ def retry(max_retries=3, delay=2):
             raise last_exception
         return wrapper
     return decorator
-
 
 def timer(func):
     """函数耗时统计装饰器"""

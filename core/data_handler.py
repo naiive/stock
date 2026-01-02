@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Module: DataHandler
 Description: 负责量化系统的数据供应。核心功能是实现“历史数据+实时数据”的内存级无缝拼接。
@@ -12,7 +14,6 @@ from core.data_client.mysql_client import MySQLClient
 from conf.config import SYSTEM_CONFIG
 from core.data_manager import StockListManager
 
-
 class DataHandler:
     """
     实时数据中心处理器
@@ -21,7 +22,6 @@ class DataHandler:
     2. 管理全市场实时快照的本地内存缓存（realtime_cache）。
     3. 为策略提供“今天+过去”的完整 K 线序列，确保指标计算的实时性。
     """
-
     def __init__(self):
         # 初始化数据库客户端，用于读取历史日线、周线等持久化数据
         self.mysql_client = MySQLClient()

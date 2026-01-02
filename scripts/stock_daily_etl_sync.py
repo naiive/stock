@@ -155,7 +155,6 @@ def mysql_upsert_method(table, conn, keys, data_iter):
             logger.debug(f"First Row Parameters: {params[0]}")
         raise  # 重新抛出异常
 
-
 # ------------------- 重试装饰器（同步） -------------------
 def sync_retry(max_retries=2, backoff_base=1.6):
     def decorator(func):
@@ -204,7 +203,6 @@ def fetch_stock_list_safe():
         raise Exception(f"获取股票列表失败: {e}")
 
     raise Exception("未能从任何接口获取到股票列表")
-
 
 def get_stock_list_manager():
     cache_file = CONFIG["CACHE_FILE"]
@@ -441,7 +439,6 @@ def main():
     logger.info("=" * 60)
     logger.info(f"✅ 历史数据 Upsert 任务完成 | 总耗时: {elapsed_time:.1f}s")
     logger.info("=" * 60)
-
 
 if __name__ == "__main__":
     # 今天有数据就执行 main，么有数就等有数据后在执行

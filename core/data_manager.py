@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Module: StockListManager
 Description: 股票池管理器。负责全市场股票名单的拉取、本地持久化缓存、以及根据规则过滤（如剔除 ST、创业板等）。
@@ -16,12 +18,10 @@ import akshare as ak
 from conf.config import PATH_CONFIG, INDICATOR_CONFIG  # 导入路径和指标过滤配置
 from core.utils.decorator import retry  # 导入重试装饰器
 
-
 class StockListManager:
     """
     股票清单管理器：负责获取、过滤以及本地 JSON 缓存
     """
-
     def __init__(self, db_client=None):
         """
         初始化管理器

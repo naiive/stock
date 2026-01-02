@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Module: APIClient
 Description: 三方行情接口封装。负责从公网（如 AkShare/东方财富）拉取实时的市场快照。
@@ -12,7 +14,6 @@ import akshare as ak
 import pandas as pd
 from core.utils.decorator import retry
 from conf.config import SYSTEM_CONFIG
-
 
 class APIClient:
     """

@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 通知工具集：邮件与 Telegram 推送（TradingView Scan 风格）
 - 自动适配不固定列

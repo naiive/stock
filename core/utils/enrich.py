@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 数据增强工具
 
@@ -14,7 +16,6 @@
 """
 
 from __future__ import annotations
-
 import pandas as pd
 
 try:
@@ -22,7 +23,6 @@ try:
     from core.data_client.api_client import APIClient
 except Exception:
     APIClient = None  # 兜底，占位
-
 
 def enrich_results(df_res: pd.DataFrame, handler=None, df_live: pd.DataFrame | None = None) -> pd.DataFrame:
     if df_res is None or df_res.empty:

@@ -1,4 +1,6 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import numpy as np
 import pandas as pd
 
@@ -6,7 +8,6 @@ from core.map.squeeze_color_map import squeeze_color_map
 from indicators.squeeze_momentum_indicator import squeeze_momentum_indicator
 from indicators.support_resistance_breaks_indicator import support_resistance_breaks_indicator
 from indicators.volume_expand_up_indiccator import volume_expand_up_indicator
-
 
 def run_strategy(df, symbol):
     """
@@ -141,4 +142,3 @@ def run_strategy(df, symbol):
 
     except Exception:
         return None
-
