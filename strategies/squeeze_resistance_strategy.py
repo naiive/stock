@@ -115,7 +115,6 @@ def run_strategy(df, symbol):
 
             color_value_list.append(f"{color_str}[{value_str}]")
         color_value_cols = "-".join(color_value_list)
-        print(symbol + color_value_cols)
 
         # ==================================================
         # 10.是否放量
