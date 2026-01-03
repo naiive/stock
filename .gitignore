@@ -8,3 +8,5 @@ data/logs/
 conf/config.py
 
 /.idea/
+
+scripts/vid/
