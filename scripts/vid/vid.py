@@ -14,7 +14,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 script_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_path)
 os.environ.setdefault("TERM", "xterm-256color")
-MAX_WORKERS, GLOBAL_MAX_PAGES, BASE_SAVE_DIR = 3, 1, 'vid'
+MAX_WORKERS, PAGES_TO_CRAWL, BASE_SAVE_DIR = 3, [2], 'vid'
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -88,7 +88,7 @@ def producer(targets):
     try:
         for f_n, b_u in targets:
             f_n_safe = safe_filename(f_n)
-            for p in range(1, GLOBAL_MAX_PAGES + 1):
+            for p in PAGES_TO_CRAWL:
                 try:
                     r = S.get(f"{b_u}&page={p}", headers=HEADERS, timeout=10, verify=False)
                     soup = BeautifulSoup(r.text, 'lxml')
