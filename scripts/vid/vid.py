@@ -7,6 +7,7 @@ from queue import Queue
 from tqdm import tqdm
 from cryptography.fernet import Fernet
 from conf.config import ENCRYPTION_KEY
+
 S = requests.Session()
 cipher = Fernet(ENCRYPTION_KEY)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -101,8 +102,14 @@ def producer(targets):
                             if img and 'data-src' in img.attrs:
                                 vm = re.search(r'/(\d+)/', img['data-src'])
                                 vid = vm.group(1) if vm else ""
-                            if vid and vid in downloaded_ids: continue
-                            task_queue.put((a['href'], f_n_safe, vid)); total_found += 1
+
+                            if vid:
+                                with download_lock:
+                                    if vid in downloaded_ids: continue
+                                    downloaded_ids.add(vid)
+
+                            task_queue.put((a['href'], f_n_safe, vid));
+                            total_found += 1
                         except Exception as e:
                             print(f"Video item failed: {e}")
                 except Exception as e:
@@ -133,31 +140,41 @@ def consumer(idx):
                     task_queue.task_done()
                     continue
                 fpath = os.path.join(spath, fn)
-                with download_lock: active_downloads[idx] = f"D:{fn[-8:]}"
-                vh = HEADERS.copy(); vh['Referer'] = url
+                with download_lock:
+                    active_downloads[idx] = f"D:{fn[-8:]}"
+                vh = HEADERS.copy();
+                vh['Referer'] = url
                 mp4_safe = safe_url(mp4)
                 try:
                     with S.get(mp4_safe, headers=vh, stream=True, timeout=60, verify=False, allow_redirects=True) as r:
                         r.raise_for_status()
                         with open(fpath, 'wb') as f:
-                            for c in r.iter_content(chunk_size=1024*1024):
+                            for c in r.iter_content(chunk_size=1024 * 1024):
                                 if c: f.write(c)
                 except Exception as e:
                     print(f"Download failed: {mp4_safe}, reason: {e}")
+                    with download_lock:
+                        if v_id in downloaded_ids: downloaded_ids.remove(v_id)
         except Exception as e:
             print(f"Parse or request failed: {url}, reason: {e}")
+            with download_lock:
+                if v_id in downloaded_ids: downloaded_ids.remove(v_id)
         finally:
             total_done += 1
-            with download_lock: active_downloads[idx] = "Idle"
+            with download_lock:
+                active_downloads[idx] = "Idle"
             task_queue.task_done()
 
 def monitor_ui():
     try:
         pbar = tqdm(total=1, unit="vids", dynamic_ncols=True, colour='green')
         while True:
-            pbar.total = max(total_found, 1); pbar.n = total_done
-            with download_lock: status = " | ".join([f"T{i+1}:{n}" for i, n in enumerate(active_downloads)])
-            pbar.set_description(f"📥 [{status}]"); pbar.refresh()
+            pbar.total = max(total_found, 1);
+            pbar.n = total_done
+            with download_lock:
+                status = " | ".join([f"T{i + 1}:{n}" for i, n in enumerate(active_downloads)])
+            pbar.set_description(f"📥 [{status}]");
+            pbar.refresh()
             if total_done >= total_found and total_found > 0 and task_queue.empty(): break
             time.sleep(0.5)
         pbar.close()
