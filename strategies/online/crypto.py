@@ -391,13 +391,13 @@ class NotifyEngine:
         msg = (
             f"⚡ <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
             f"━━━━━━━━━━━━━━\n"
-            f"🔄 <b>时间:</b> {res.get('time', '-')} (UTC+8)\n"
-            f"💹 <b>信号:</b> {signal_text}\n"
-            f"💰 <b>价格:</b> <code>{price}</code>{change_str}\n"
-            f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)}</code> Bars\n"
+            f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
+            f"💹 <b>信号:</b> <code>{signal_text}</code>\n"
+            f"💰 <b>价格:</b> <code>{price}{change_str}</code>\n"
+            f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
             f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
             f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
-            f"📅 <b>日期:</b> {res.get('date', '-')}\n"
+            f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
         )
 
         url = f"https://api.telegram.org/bot{token}/sendMessage"
