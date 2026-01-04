@@ -98,7 +98,9 @@ class DataEngine:
         params = {"symbol": symbol, "interval": interval, "limit": self.cfg['KLINE_LIMIT']}
         try:
             async with session.get(url, params=params, timeout=10) as r:
-                if r.status != 200: return None
+                if r.status != 200:
+                    logger.error(f"币安 API 响应异常: {r.status}")
+                    return None
                 data = await r.json()
                 df = pd.DataFrame(data, columns=['ts', 'o', 'h', 'l', 'c', 'v', 'cts', 'qv', 'tr', 'tb', 'tq', 'i'])
 
@@ -607,7 +609,7 @@ class ScanEngine:
         async with aiohttp.ClientSession() as session:
 
             # --- 启动时立即触发一次 1h 扫描 ---
-            logger.info("⚡ 正在执行启动即时扫描 (Manual Trigger)...")
+            logger.info("⚡ 正在执行启动即时扫描")
             symbols = self.cfg.get("watch_list") or await self.data_e.get_active_symbols(session)
             await self.scan_cycle(session, symbols, "1h")
             # --- 启动时立即触发一次 1h 扫描 ---
