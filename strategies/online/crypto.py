@@ -17,7 +17,7 @@ from conf.config import TELEGRAM_CONFIG
 # =====================================================
 CONFIG = {
     "watch_list": [],           # 留空则自动获取全市场高成交额品种
-    "intervals": ["1h", "4h", "1d"],        # 监听的时间周期
+    "intervals": ["1h"],        # 监听的时间周期
 
     "api": {
         "BASE_URL": "https://fapi.binance.com",
@@ -293,9 +293,9 @@ class StrategyEngine:
 
         signal = "No"
         if cur['sqz_status'] == "OFF" and prev['sqz_status'] == "ON" and prev['sqz_id'] >= self.cfg['min_sqz_bars']:
-            if cur['close'] > cur['ema200'] and cur['sqz_hvalue'] > 0:
+            if cur['close'] > cur['ema200'] and cur['close'] > 0 and cur['sqz_hcolor'] == "亮绿":
                 signal = "Long"
-            elif cur['close'] < cur['ema200'] and cur['sqz_hvalue'] < 0:
+            elif cur['close'] < cur['ema200'] and cur['close'] < 0 and cur['sqz_hcolor'] == "亮红":
                 signal = "Short"
 
         energy, tr, ts = [], [], []
