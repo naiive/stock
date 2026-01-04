@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 # =====================================================
-# 1. 数据引擎 (DataEngine) - 负责行情抓取
+# 1. 数据引擎 (DataEngine)
 # =====================================================
 class DataEngine:
     def __init__(self, api_cfg: dict):
@@ -255,22 +255,17 @@ class IndicatorEngine:
 
 
 # =====================================================
-# 3. 策略引擎 (StrategyEngine) - 信号判定
+# 3. 策略引擎 (StrategyEngine)
 # =====================================================
 class StrategyEngine:
     def __init__(self, st_cfg: dict):
         self.cfg = st_cfg
 
     def execute(self, df: pd.DataFrame, symbol: str, interval: str) -> Dict[str, Any]:
-        if len(df) < 2: return {"signal": "NO"}
 
         cur = df.iloc[-1]
         prev = df.iloc[-2]
 
-        # 核心策略逻辑：
-        # 1. 前一根K线处于 ON (挤压状态) 且持续时间 >= 阈值
-        # 2. 当前K线变为 OFF (爆发状态)
-        # 3. 配合 EMA200 过滤多空方向
         signal = "No"
         if cur['sqz_status'] == "OFF" and prev['sqz_status'] == "ON" and prev['sqz_id'] >= self.cfg['min_sqz_bars']:
             if cur['close'] > cur['ema200'] and cur['sqz_hvalue'] > 0:
@@ -306,7 +301,7 @@ class StrategyEngine:
 
 
 # =====================================================
-# 4. 通知引擎 (NotifyEngine) - log和telegram
+# 4. 通知引擎 (NotifyEngine)
 # =====================================================
 class NotifyEngine:
     def __init__(self, notify_cfg: dict):
@@ -321,7 +316,7 @@ class NotifyEngine:
             return
 
         # 统计产生信号的数量
-        signals = [r for r in results_list if r.get('signal') != "NO"]
+        signals = [r for r in results_list if r.get('signal') != "No"]
 
         # 1. 控制台打印
         if self.cfg.get('CONSOLE_LOG'):
@@ -335,20 +330,27 @@ class NotifyEngine:
                 else:
                     logger.info(f"{log_prefix} | N | {json_str}")
 
-        # 2. Telegram 推送任务
+        # 2. Telegram：只过滤出有信号的数据发送
         if self.cfg.get('TG_ENABLE'):
-            task = asyncio.create_task(self.broadcast_to_tg(results_list, interval))
-            self.running_tasks.append(task)
-            task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
+            signal_results = [
+                r for r in results_list
+                    if str(r.get('signal', 'No')) != "No"
+            ]
 
-    async def broadcast_to_tg(self, results_list, interval):
-        proxy = self.cfg.get('TG_PROXY')
+            if signal_results:
+                task = asyncio.create_task(self.broadcast_to_tg(signal_results, interval))
+                self.running_tasks.append(task)
+                task.add_done_callback(
+                    lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None
+                )
+
+    async def broadcast_to_tg(self, signal_results, interval):
         async with aiohttp.ClientSession() as session:
-            for res in results_list:
-                await self.send_to_telegram(session, res, interval, proxy)
-                await asyncio.sleep(0.1)  # 频率保护
+            for res in signal_results:
+                await self.send_to_telegram(session, res, interval)
+                await asyncio.sleep(0.1)
 
-    async def send_to_telegram(self, session, res, interval, proxy):
+    async def send_to_telegram(self, session, res, interval):
         # 1. 基础字段处理
         token = self.cfg.get('TG_TOKEN')
         chat_id = self.cfg.get('TG_CHAT_ID')
@@ -386,7 +388,6 @@ class NotifyEngine:
         trend_list = trend_str.split('-') if trend_str else []
         trend_icons = "".join(["⬆️" if "高" in t else "⬇️" for t in trend_list[-6:]]) if trend_list else ""
 
-
         # 6. 构建消息模板
         msg = (
             f"⚡ <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
@@ -411,7 +412,7 @@ class NotifyEngine:
         }
 
         try:
-            async with session.post(url, data=payload, proxy=proxy, timeout=10) as resp:
+            async with session.post(url, data=payload, timeout=10) as resp:
                 if resp.status != 200:
                     logger.error(f"TG 发送失败 [{resp.status}]: {await resp.text()}")
         except Exception as e:
@@ -419,7 +420,7 @@ class NotifyEngine:
 
 
 # =====================================================
-# 5. 扫描引擎 (ScanEngine) - 并发调度
+# 5. 扫描引擎 (ScanEngine)
 # =====================================================
 class ScanEngine:
     def __init__(self, cfg: dict):
@@ -455,13 +456,10 @@ class ScanEngine:
         """单次循环调度"""
         sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
 
-        # 创建并发任务
         tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
 
-        # 获取所有结果
         results = list(await asyncio.gather(*tasks))
 
-        # 将结果移交给通知引擎进行后续处理
         self.notify_e.process_results(results, interval)
 
     async def run(self):
@@ -470,7 +468,6 @@ class ScanEngine:
             tasks = [self.scan_cycle(session, symbols, i) for i in self.cfg['intervals']]
             await asyncio.gather(*tasks)
 
-            # --- 关键修复：等待所有 TG 推送任务完成 ---
             if self.notify_e.running_tasks:
                 logger.info(f"等待 TG 推送完成 (共 {len(self.notify_e.running_tasks)} 个任务)...")
                 await asyncio.gather(*self.notify_e.running_tasks)
