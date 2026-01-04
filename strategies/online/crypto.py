@@ -11,36 +11,35 @@ from typing import List, Dict, Optional, Any
 # 0. 配置中心 (CONFIG)
 # =====================================================
 CONFIG = {
+    "watch_list": [],           # 留空则自动获取全市场高成交额品种
+    "intervals": ["1h"],        # 监听的时间周期
+
     "api": {
         "BASE_URL": "https://fapi.binance.com",
-        "TOP_N": 30,  # 自动抓取成交额前30的品种
-        "MAX_CONCURRENT": 10,  # 最大并发请求数
-        "KLINE_LIMIT": 1000,
-        "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"]
+        "TOP_N": 10,            # 自动抓取成交额前10的品种
+        "MAX_CONCURRENT": 10,   # 最大并发请求数
+        "KLINE_LIMIT": 1000,    # K线数量
+        "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"] # 排除稳定币之类的
     },
 
-    "watch_list": ["ETHUSDT"],  # 留空则自动获取全市场高成交额品种
-
-    "intervals": ["1h"],  # 监听的时间周期
-
     "strategy": {
-        "bb_length": 20,  # 布林带周期
-        "bb_mult": 2.0,  # 布林带标准差倍数
-        "kc_length": 20,  # 肯特纳通道周期
-        "kc_mult": 1.2,  # 肯特纳通道倍数 (Squeeze核心参数)
-        "use_true_range": True,
+        "bb_length": 20,        # 布林带周期
+        "bb_mult": 2.0,         # 布林带标准差倍数
+        "kc_length": 20,        # 肯特纳通道周期
+        "kc_mult": 1.2,         # 肯特纳通道倍数 (Squeeze核心参数)
+        "use_true_range": True, # True真实波动幅度/简单波动范围
 
-        "ema_length": 200,  # 长期趋势过滤
+        "ema_length": 200,      # 长期趋势过滤
 
-        "srb_left": 15,  # 支撑压力左侧强度
-        "srb_right": 15,  # 支撑压力右侧强度
+        "srb_left": 15,         # 支撑压力左侧强度
+        "srb_right": 15,        # 支撑压力右侧强度
 
-        "min_sqz_bars": 6  # 至少6根K线才视为有效挤压
+        "min_sqz_bars": 6       # 至少6根K线才视为有效挤压
     },
 
     "notify": {
-        "CONSOLE_LOG": True,
-        "TG_ENABLE": False
+        "CONSOLE_LOG": True,    # 控制台日志输出
+        "TG_ENABLE": True       # telegram bot 发送
     }
 }
 
@@ -302,54 +301,93 @@ class StrategyEngine:
 
 
 # =====================================================
-# 4. 扫描引擎 (ScanEngine) - 并发调度
+# 4. NotifyEngine: 负责输出（控制台/Telegram）
+# =====================================================
+class NotifyEngine:
+    def __init__(self, notify_cfg: dict):
+        self.cfg = notify_cfg
+
+    def process_results(self, results: list, interval: str):
+        # 1. 强制转为 list 并排除 None（网络请求失败的条目）
+        results_list = [r for r in results if r is not None]
+
+        # 统计产生信号的数量
+        signals = [r for r in results_list if r.get('signal') != "NO"]
+
+        if self.cfg.get('CONSOLE_LOG'):
+            logger.info(f"[{interval}] 扫描完成 | 监控品种: {len(results_list)} | 触发信号: {len(signals)}")
+            for item in results_list:
+                symbol = item.get('symbol', 'Unknown')
+                json_str = json.dumps(item, ensure_ascii=False)
+                log_prefix = f"[{interval}] {symbol.ljust(12)}"
+                if item.get('signal') != "NO":
+                    logger.info(f"{log_prefix} | Y | {json_str}")
+                else:
+                    logger.info(f"{log_prefix} | N | {json_str}")
+
+
+# =====================================================
+# 5. 扫描引擎 (ScanEngine) - 并发调度
 # =====================================================
 class ScanEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
+        # 数据引擎
         self.data_e = DataEngine(cfg['api'])
+        # 指标引擎
         self.ind_e = IndicatorEngine(cfg['strategy'])
+        # 策略引擎
         self.strat_e = StrategyEngine(cfg['strategy'])
+        # 通知引擎
+        self.notify_e = NotifyEngine(cfg['notify'])
+
+    async def _proc_symbol(self, session, symbol, interval, sem):
+        """单个币种的处理流水线"""
+        async with sem:
+            try:
+                # 1. 获取数据
+                raw = await self.data_e.fetch_klines(session, symbol, interval)
+                if raw is None or len(raw) < 300:
+                    return None
+
+                # 2. 计算指标 (实例方法调用)
+                df = self.ind_e.calculate(raw)
+
+                # 3. 执行策略判定
+                return self.strat_e.execute(df, symbol, interval)
+            except Exception as e:
+                logger.error(f"处理 {symbol} 失败: {e}")
+                return None
 
     async def scan_cycle(self, session, symbols, interval):
+        """单次循环调度"""
         sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
 
-        async def _proc(s):
-            async with sem:
-                raw = await self.data_e.fetch_klines(session, s, interval)
-                if raw is None or len(raw) < 300: return None
-                # 调用实例方法而不是类方法
-                df = self.ind_e.calculate(raw)
-                return self.strat_e.execute(df, s, interval)
+        # 创建并发任务
+        tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
 
-        results = await asyncio.gather(*(_proc(s) for s in symbols))
-        # 过滤掉无效数据和无信号数据（若只想看信号，可过滤 signal != "NO"）
-        signals = [r for r in results]
+        # 获取所有结果
+        results = list(await asyncio.gather(*tasks))
 
-        if self.cfg['notify']['CONSOLE_LOG']:
-            print(f"\n>>> [{interval}] 扫描完成 | 总数: {len(symbols)} | 发现信号: {len(signals)}")
-            if signals:
-                print(json.dumps(signals, indent=4, ensure_ascii=False))
+        # 将结果移交给通知引擎进行后续处理（解耦）
+        self.notify_e.process_results(results, interval)
 
     async def run(self):
+        """入口函数"""
         async with aiohttp.ClientSession() as session:
-            symbols = self.cfg.get("watch_list")
-            if not symbols:
-                symbols = await self.data_e.get_active_symbols(session)
+            # 获取监控列表
+            symbols = self.cfg.get("watch_list") or await self.data_e.get_active_symbols(session)
 
-            logger.info(f"开始扫描 {len(symbols)} 个品种: {symbols[:5]}...")
+            logger.info(f"🚀 启动并发扫描 | 周期: {self.cfg['intervals']} | 币种数量: {len(symbols)}")
+
+            # 开启多周期并发任务
             tasks = [self.scan_cycle(session, symbols, i) for i in self.cfg['intervals']]
             await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
-    pd.set_option("display.max_rows", None)
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.width", 1000)
-    pd.set_option("display.max_colwidth", None)
-
     scanner = ScanEngine(CONFIG)
     try:
         asyncio.run(scanner.run())
     except KeyboardInterrupt:
-        pass
+        logger.error("APP启动出错")
