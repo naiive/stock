@@ -80,17 +80,33 @@ class DataEngine:
         url = f"{self.cfg['BASE_URL']}/fapi/v1/ticker/24hr"
         try:
             async with session.get(url, timeout=10) as r:
+                if r.status != 200:
+                    logger.error(f"币安 API 响应异常: {r.status}")
+                    return []
                 data = await r.json()
+
+                # 检查 data 是否为列表，如果不是（报错信息通常是字典），则返回空
+                if not isinstance(data, list):
+                    logger.error(f"API 返回数据格式错误: {data}")
+                    return []
+
                 df = pd.DataFrame(data)
+
+                # 确保这里不需要 iloc[:-1]，之前已经讨论过
                 # 过滤 USDT 交易对且排除稳定币
                 df = df[df['symbol'].str.endswith('USDT')]
-                for token in self.cfg['EXCLUDE_TOKENS']:
+                for token in self.cfg.get('EXCLUDE_TOKENS', []):
                     df = df[~df['symbol'].str.contains(token)]
 
-                df['quoteVolume'] = df['quoteVolume'].astype(float)
-                return df.sort_values('quoteVolume', ascending=False).head(self.cfg['TOP_N'])['symbol'].tolist()
+                df['quoteVolume'] = pd.to_numeric(df['quoteVolume'], errors='coerce')
+                # 剔除空值并排序
+                df = df.dropna(subset=['quoteVolume'])
+
+                top_symbols = df.sort_values('quoteVolume', ascending=False).head(self.cfg['TOP_N'])['symbol'].tolist()
+                logger.info(f"✅ 成功获取活跃币种数量: {len(top_symbols)}")
+                return top_symbols
         except Exception as e:
-            logger.error(f"获取活跃币种失败: {e}")
+            logger.error(f"获取活跃币种失败: {e}")  # 这里的错误就是日志里看到的那个
             return []
 
     async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[pd.DataFrame]:
