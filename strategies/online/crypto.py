@@ -68,12 +68,6 @@ class DataEngine:
             async with session.get(url, timeout=10) as r:
                 data = await r.json()
                 df = pd.DataFrame(data)
-
-                # ******剔除最新的一条（尚未闭合的 K 线）******
-                if len(df) > 0:
-                    df = df.iloc[:-1].copy()
-                # ******剔除最新的一条（尚未闭合的 K 线）******
-
                 # 过滤 USDT 交易对且排除稳定币
                 df = df[df['symbol'].str.endswith('USDT')]
                 for token in self.cfg['EXCLUDE_TOKENS']:
@@ -94,6 +88,12 @@ class DataEngine:
                 if r.status != 200: return None
                 data = await r.json()
                 df = pd.DataFrame(data, columns=['ts', 'o', 'h', 'l', 'c', 'v', 'cts', 'qv', 'tr', 'tb', 'tq', 'i'])
+
+                # ******剔除最新的一条（尚未闭合的 K 线）******
+                if len(df) > 0:
+                    df = df.iloc[:-1].copy()
+                # ******剔除最新的一条（尚未闭合的 K 线）******
+
                 df = df[['ts', 'o', 'h', 'l', 'c', 'v']].astype(float)
                 df.columns = ['ts', 'open', 'high', 'low', 'close', 'volume']
                 # 时间转换为北京时间
