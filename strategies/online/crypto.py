@@ -1,8 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import json
 import numpy as np
 import pandas as pd
 import asyncio
 import aiohttp
-import json
 import logging
 from datetime import datetime, timedelta
 import time
@@ -313,12 +316,11 @@ class StrategyEngine:
 class NotifyEngine:
     def __init__(self, notify_cfg: dict):
         self.cfg = notify_cfg
-        self.running_tasks = []  # 用于追踪异步任务
+        self.running_tasks = []
 
     def process_results(self, results: list, interval: str):
-
+        # 过滤 None
         results_list = [r for r in results if r is not None]
-
         if not results_list:
             return
 
@@ -337,38 +339,49 @@ class NotifyEngine:
                 else:
                     logger.info(f"{log_prefix} | N | {json_str}")
 
-        # 2. Telegram：只过滤出有信号的数据发送
-        if self.cfg.get('TG_ENABLE'):
-            signal_results = [
-                r for r in results_list
-                    if str(r.get('signal', 'No')) != "No"
-            ]
-
-            if signal_results:
-                task = asyncio.create_task(self.broadcast_to_tg(signal_results, interval))
-                self.running_tasks.append(task)
-                task.add_done_callback(
-                    lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None
-                )
+        # 2. Telegram：合并发送
+        if self.cfg.get('TG_ENABLE') and signals:
+            # 修改点：直接把所有有信号的结果传给 broadcast_to_tg
+            task = asyncio.create_task(self.broadcast_to_tg(signals, interval))
+            self.running_tasks.append(task)
+            task.add_done_callback(
+                lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None
+            )
 
     async def broadcast_to_tg(self, signal_results, interval):
+        """
+        合并信号并分段发送（每 10 个信号合并为一条消息）
+        """
         async with aiohttp.ClientSession() as session:
-            for res in signal_results:
-                await self.send_to_telegram(session, res, interval)
-                await asyncio.sleep(0.1)
+            # 设置每条消息合并的数量，防止单条消息过长
+            chunk_size = 10
+            for i in range(0, len(signal_results), chunk_size):
+                chunk = signal_results[i:i + chunk_size]
 
-    async def send_to_telegram(self, session, res, interval):
-        # 1. 基础字段处理
-        token = self.cfg.get('TG_TOKEN')
-        chat_id = self.cfg.get('TG_CHAT_ID')
+                # 构建合并后的消息头部
+                header = f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
+                header += f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
+                header += f"━━━━━━━━━━━━━━\n"
 
-        # Tradingview链接
+                body_parts = []
+                for res in chunk:
+                    body_parts.append(self.format_single_signal(res, interval))
+
+                final_msg = header + "\n\n".join(body_parts)
+
+                # 发送合并后的消息
+                await self.send_raw_tg_message(session, final_msg)
+                await asyncio.sleep(0.5)
+
+    @staticmethod
+    def format_single_signal(res, interval):
+        """
+        将单个信号格式化为字符串片段（原 send_to_telegram 的逻辑搬迁到这里）
+        """
         symbol = res.get('symbol', 'Unknown')
         tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=BINANCE%3A{symbol}"
-
         symbol_link = f'<a href="{tv_url}">{symbol}</a>'
 
-        # 2. 信号转换
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":
             signal_text = "🟢 Long"
@@ -380,23 +393,22 @@ class NotifyEngine:
             signal_text = "No"
             trend_str = str(res.get('trend_r', ""))
 
-        # 3. 价格与涨幅
         price = res.get('price', 0)
         change = res.get('change', 0)
-        change_str = f"（{'+' if change >= 0 else ''}{change}%）"
+        change_str = f"({'+' if change >= 0 else ''}{change}%)"
 
-        # 4. 动能图标处理
+        # 动能图标
         energy_str = str(res.get('energy', ""))
         energy_items = energy_str.split('-') if energy_str else []
         recent_items = energy_items[-6:]
         mom_icons = "".join(["🟢" if "绿" in item else "🔴" for item in recent_items])
 
-        # 5. 趋势图标映射
+        # 趋势图标
         trend_list = trend_str.split('-') if trend_str else []
         trend_icons = "".join(["⬆️" if "高" in t else "⬇️" for t in trend_list[-6:]]) if trend_list else ""
 
         # 6. 构建消息模板
-        msg = (
+        msg_text = (
             f"⚡ <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
             f"━━━━━━━━━━━━━━\n"
             f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
@@ -407,15 +419,22 @@ class NotifyEngine:
             f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
             f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
         )
+        return msg_text
 
+    async def send_raw_tg_message(self, session, msg_text):
+        """
+        最终的 TG 发送底层逻辑
+        """
+        token = self.cfg.get('TG_TOKEN')
+        chat_id = self.cfg.get('TG_CHAT_ID')
         url = f"https://api.telegram.org/bot{token}/sendMessage"
 
         payload = {
             "chat_id": chat_id,
-            "text": msg,
+            "text": msg_text,
             "parse_mode": "HTML",
-            "disable_web_page_preview": False,
-            "disable_notification": True if raw_signal == "No" else False
+            "disable_web_page_preview": True,
+            "disable_notification": False
         }
 
         try:
@@ -573,6 +592,13 @@ class ScanEngine:
     async def run(self):
         """总入口：并发启动所有周期的 Worker"""
         async with aiohttp.ClientSession() as session:
+
+            # --- 启动时立即触发一次 1h 扫描 ---
+            logger.info("⚡ 正在执行启动即时扫描 (Manual Trigger)...")
+            symbols = self.cfg.get("watch_list") or await self.data_e.get_active_symbols(session)
+            await self.scan_cycle(session, symbols, "1h")
+            # --- 启动时立即触发一次 1h 扫描 ---
+
             workers = []
 
             # 1. 为每个周期创建一个独立的 Worker
