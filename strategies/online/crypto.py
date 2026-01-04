@@ -120,21 +120,14 @@ class IndicatorEngine:
 
     @staticmethod
     def get_histogram_color(series: pd.Series) -> Any:
-        """
-        根据动能柱的数值及其增减趋势判定颜色：
-        1. 亮绿：在 0 轴上方且增长 (看涨强劲)
-        2. 暗绿：在 0 轴上方但下降 (看涨减弱)
-        3. 亮红：在 0 轴下方且下降 (看跌强劲)
-        4. 暗红：在 0 轴下方但回升 (看跌减弱)
-        """
         val = series
         val_prev = series.shift(1)
 
         conditions = [
-            (val > 0) & (val > val_prev),  # 亮绿
+            (val > 0) & (val > val_prev),   # 亮绿
             (val > 0) & (val <= val_prev),  # 暗绿
-            (val < 0) & (val < val_prev),  # 亮红
-            (val < 0) & (val >= val_prev)  # 暗红
+            (val < 0) & (val < val_prev),   # 亮红
+            (val < 0) & (val >= val_prev)   # 暗红
         ]
         choices = ["亮绿", "暗绿", "亮红", "暗红"]
 
