@@ -290,12 +290,14 @@ class StrategyEngine:
 
         cur = df.iloc[-1]
         prev = df.iloc[-2]
+        # 涨幅
+        change = (cur['close'] / prev['close'] - 1) * 100
 
         signal = "No"
         if cur['sqz_status'] == "OFF" and prev['sqz_status'] == "ON" and prev['sqz_id'] >= self.cfg['min_sqz_bars']:
-            if cur['close'] > cur['ema200'] and cur['close'] > 0 and cur['sqz_hcolor'] == "亮绿":
+            if cur['close'] > cur['ema200'] and change > 0 and cur['sqz_hcolor'] == "亮绿":
                 signal = "Long"
-            elif cur['close'] < cur['ema200'] and cur['close'] < 0 and cur['sqz_hcolor'] == "亮红":
+            elif cur['close'] < cur['ema200'] and change < 0 and cur['sqz_hcolor'] == "亮红":
                 signal = "Short"
 
         energy, tr, ts = [], [], []
@@ -306,7 +308,6 @@ class StrategyEngine:
             tr.append("高" if row['close'] > cur['srb_res'] else "低")
             ts.append("高" if row['close'] > cur['srb_sup'] else "低")
 
-        change = (cur['close'] / prev['close'] - 1) * 100
         return {
             "date": df.index[-1].strftime("%Y-%m-%d"),
             "time": df.index[-1].strftime("%H:%M:%S"),
