@@ -91,8 +91,6 @@ class DataEngine:
                     return []
 
                 df = pd.DataFrame(data)
-
-                # 确保这里不需要 iloc[:-1]，之前已经讨论过
                 # 过滤 USDT 交易对且排除稳定币
                 df = df[df['symbol'].str.endswith('USDT')]
                 for token in self.cfg.get('EXCLUDE_TOKENS', []):
