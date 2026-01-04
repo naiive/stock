@@ -4,7 +4,8 @@ import asyncio
 import aiohttp
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
+import time
 from typing import List, Dict, Optional, Any
 from conf.config import TELEGRAM_CONFIG
 
@@ -13,7 +14,7 @@ from conf.config import TELEGRAM_CONFIG
 # =====================================================
 CONFIG = {
     "watch_list": [],           # 留空则自动获取全市场高成交额品种
-    "intervals": ["1h"],        # 监听的时间周期
+    "intervals": ["1h", "4h", "1d"],        # 监听的时间周期
 
     "api": {
         "BASE_URL": "https://fapi.binance.com",
@@ -64,6 +65,12 @@ class DataEngine:
             async with session.get(url, timeout=10) as r:
                 data = await r.json()
                 df = pd.DataFrame(data)
+
+                # ******剔除最新的一条（尚未闭合的 K 线）******
+                if len(df) > 0:
+                    df = df.iloc[:-1].copy()
+                # ******剔除最新的一条（尚未闭合的 K 线）******
+
                 # 过滤 USDT 交易对且排除稳定币
                 df = df[df['symbol'].str.endswith('USDT')]
                 for token in self.cfg['EXCLUDE_TOKENS']:
@@ -420,7 +427,60 @@ class NotifyEngine:
 
 
 # =====================================================
-# 5. 扫描引擎 (ScanEngine)
+# 5. 定时引擎 (TimeEngine)
+# =====================================================
+class TimeEngine:
+
+    @staticmethod
+    def get_wait_seconds(interval: str) -> float:
+        now = datetime.now()
+        val = int(interval[:-1])
+        unit = interval[-1].lower()
+
+        # 1. 先确定延迟偏移量 (单位：秒)
+        if unit == 'm':
+            offset_sec = 10
+        elif unit == 'h':
+            offset_sec = 120  # 2分钟
+        elif unit == 'd':
+            offset_sec = 300  # 5分钟
+        else:
+            offset_sec = 5
+
+        # 2. 计算基础对齐时间点 (不带 offset 的整点)
+        if unit == 'm':
+            target_min = ((now.minute // val) + 1) * val
+            if target_min >= 60:
+                base_time = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+            else:
+                base_time = now.replace(minute=target_min, second=0, microsecond=0)
+
+        elif unit == 'h':
+            target_hour = ((now.hour // val) + 1) * val
+            if target_hour >= 24:
+                base_time = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                base_time = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
+
+        elif unit == 'd':
+            base_time = now.replace(hour=8, minute=0, second=0, microsecond=0)
+            if now >= base_time:
+                base_time += timedelta(days=1)
+        else:
+            return 60.0
+
+        # 3. 使用 timedelta 加上偏移量，而不是在 replace 里改 second
+        next_run = base_time + timedelta(seconds=offset_sec)
+
+        # 4. 计算差值
+        wait_sec = (next_run - now).total_seconds()
+
+        # 如果当前就在延迟窗内（wait_sec 为负），则强制返回 1 秒后执行或跳到下一周期
+        return wait_sec if wait_sec > 0 else 1.0
+
+
+# =====================================================
+# 5. 扫描引擎 (ScanEngine) - 适配定时器
 # =====================================================
 class ScanEngine:
     def __init__(self, cfg: dict):
@@ -433,20 +493,16 @@ class ScanEngine:
         self.strat_e = StrategyEngine(cfg['strategy'])
         # 通知引擎
         self.notify_e = NotifyEngine(cfg['notify'])
+        # 定时引擎
+        self.timer = TimeEngine()
 
     async def _proc_symbol(self, session, symbol, interval, sem):
         """单个币种的处理流水线"""
         async with sem:
             try:
-                # 1. 获取数据
                 raw = await self.data_e.fetch_klines(session, symbol, interval)
-                if raw is None or len(raw) < 300:
-                    return None
-
-                # 2. 计算指标 (实例方法调用)
+                if raw is None or len(raw) < 300: return None
                 df = self.ind_e.calculate(raw)
-
-                # 3. 执行策略判定
                 return self.strat_e.execute(df, symbol, interval)
             except Exception as e:
                 logger.error(f"处理 {symbol} 失败: {e}")
@@ -455,23 +511,79 @@ class ScanEngine:
     async def scan_cycle(self, session, symbols, interval):
         """单次循环调度"""
         sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
-
         tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
-
         results = list(await asyncio.gather(*tasks))
-
+        # 这里的 process_results 内部会过滤没有信号的数据并发送 TG
         self.notify_e.process_results(results, interval)
 
-    async def run(self):
-        async with aiohttp.ClientSession() as session:
-            symbols = self.cfg.get("watch_list") or await self.data_e.get_active_symbols(session)
-            tasks = [self.scan_cycle(session, symbols, i) for i in self.cfg['intervals']]
-            await asyncio.gather(*tasks)
+    async def interval_worker(self, session, interval):
+        logger.info(f"🟢 [{interval}] 周期监控任务已启动")
 
-            if self.notify_e.running_tasks:
-                logger.info(f"等待 TG 推送完成 (共 {len(self.notify_e.running_tasks)} 个任务)...")
-                await asyncio.gather(*self.notify_e.running_tasks)
-                logger.info("所有推送任务已结束。")
+        # 记录上一次成功执行的“时间槽”，防止在同一个周期内重复触发
+        last_run_slot = None
+
+        while True:
+            # 1. 计算距离“下一次”对齐点的时间
+            wait_sec = self.timer.get_wait_seconds(interval)
+
+            # 2. 只有在需要等待时才休眠
+            if wait_sec > 0:
+                # 计算目标时间用于日志展示
+                target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
+                logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
+                await asyncio.sleep(wait_sec)
+
+            # 3. 确定当前的时间槽（例如 11:00），防止重复扫描
+            # 如果 get_wait_seconds 逻辑正确，这里其实是双保险
+            current_slot = datetime.now().replace(second=0, microsecond=0)
+            if last_run_slot == current_slot:
+                # 如果当前分钟已经跑过了，强制休眠一小会儿避开这个槽位
+                await asyncio.sleep(1)
+                continue
+
+            try:
+                start_time = time.time()
+
+                # 执行扫描逻辑
+                symbols = self.cfg.get("watch_list") or await self.data_e.get_active_symbols(session)
+                await self.scan_cycle(session, symbols, interval)
+
+                # 确保 TG 消息发出
+                if self.notify_e.running_tasks:
+                    await asyncio.gather(*self.notify_e.running_tasks)
+
+                # 标记本次槽位已完成
+                last_run_slot = current_slot
+
+                duration = time.time() - start_time
+                logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
+
+            except Exception as e:
+                logger.error(f"❌ [{interval}] 异常: {e}")
+                # 报错后不要立即重试，防止死循环轰炸 API
+                await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
+
+    @staticmethod
+    async def heartbeat_worker():
+        """独立的心跳协程"""
+        while True:
+            logger.info("💓 机器人运行中，系统心跳正常")
+            await asyncio.sleep(8 * 3600)
+
+    async def run(self):
+        """总入口：并发启动所有周期的 Worker"""
+        async with aiohttp.ClientSession() as session:
+            workers = []
+
+            # 1. 为每个周期创建一个独立的 Worker
+            for interval in self.cfg.get('intervals'):
+                workers.append(self.interval_worker(session, interval))
+
+            # 2. 加入心跳 Worker
+            workers.append(self.heartbeat_worker())
+
+            # 3. 并行运行所有死循环协程
+            await asyncio.gather(*workers)
 
 
 if __name__ == "__main__":
