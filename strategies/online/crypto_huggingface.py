@@ -106,7 +106,7 @@ class DataEngine:
                 if not data: return []
 
                 df = pd.DataFrame(data)
-                df['vol_usdt'] = pd.to_numeric(df['volCcy24h'], errors='coerce')
+                df['vol_usdt'] = pd.to_numeric(df['volCcy24h'], errors='coerce') * pd.to_numeric(df['last'], errors='coerce')
                 df = df[df['instId'].str.endswith('-USDT-SWAP')]
 
                 exclude = self.cfg.get('EXCLUDE_TOKENS', [])

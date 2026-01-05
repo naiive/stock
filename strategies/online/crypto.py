@@ -127,8 +127,8 @@ class DataEngine:
                 if not data: return []
 
                 df = pd.DataFrame(data)
-                # volCcy24h 是 OKX 的 24h USDT 成交额
-                df['vol_usdt'] = pd.to_numeric(df['volCcy24h'], errors='coerce')
+                # volCcy24h * last  是 OKX 的 24h USDT 成交额
+                df['vol_usdt'] = pd.to_numeric(df['volCcy24h'], errors='coerce') * pd.to_numeric(df['last'], errors='coerce')
                 df = df[df['instId'].str.endswith('-USDT-SWAP')]
 
                 exclude = self.cfg.get('EXCLUDE_TOKENS', [])
