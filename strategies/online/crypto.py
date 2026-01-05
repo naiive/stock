@@ -528,11 +528,10 @@ class NotifyEngine:
             symbol_link = f'<a href="{tv_url}">{tv_symbol}</a>'
             # 消息模板
             tg_msg_text = (
-                f"💹 <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
-                f"━━━━━━━━━━━━━━\n"
-                f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
-                f"💸 <b>信号:</b> <code>{signal_text}</code>\n"
+                f"💹 <b>代码: </b> <b>{symbol_link}【{interval.upper()}】</b>\n"
                 f"💰 <b>价格:</b> <code>{price}{change_str}</code>\n"
+                f"💸 <b>信号:</b> <code>{signal_text}</code>\n"
+                f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
                 f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
                 f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
                 f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
@@ -546,11 +545,10 @@ class NotifyEngine:
             symbol_link = f'[{tv_symbol}]({tv_url})'
             # 消息模板
             wecom_msg_text = (
-                f"💹 信号【{interval.upper()}】{symbol_link}\n"
-                f"━━━━━━━━━━━━━━\n"
-                f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
-                f"💸 信号: {signal_text}\n"
+                f"💹 代码: {symbol_link}【{interval.upper()}】\n"
                 f"💰 价格: {price}{change_str}\n"
+                f"💸 信号: {signal_text}\n"
+                f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
                 f"🧨 挤压: {res.get('bars', 0)} Bars\n"
                 f"📊 动能: {mom_icons if mom_icons else '无'}\n"
                 f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
@@ -581,7 +579,7 @@ class NotifyEngine:
 
                 # 消息头
                 header = (
-                    f"🚀 <b>时间周期:【{interval.upper()}】</b>\n"
+                    f"🚀 <b>信号报告:【{interval.upper()}】时间周期</b>\n"
                     f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
                     f"━━━━━━━━━━━━━━\n"
                 )
@@ -628,7 +626,7 @@ class NotifyEngine:
                 chunk = signal_results[i:i + chunk_size]
 
                 header = (
-                    f"🚀 时间周期:【{interval.upper()}】\n"
+                    f"🚀 信号报告:【{interval.upper()}】时间周期\n"
                     f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
                     f"━━━━━━━━━━━━━━\n"
                 )
