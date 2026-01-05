@@ -702,7 +702,6 @@ class ScanEngine:
                 else:
                     # 如果没有 watch_list，自动获取成交额前N名（DataEngine内部已处理好格式）
                     symbols = await self.data_e.get_active_symbols(session)
-                # --- 修改部分结束 ---
 
                 if symbols:
                     # 执行扫描逻辑
