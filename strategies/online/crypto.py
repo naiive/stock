@@ -16,18 +16,16 @@ from conf.config import TELEGRAM_CONFIG
 # 0. 配置中心 (CONFIG)
 # =====================================================
 CONFIG = {
-
     # 留空则自动获取全市场高成交额品种，统一使用 Token 名称，程序会自动转换后缀
     "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
-    # "watch_list": ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "DOGE-USDT-SWAP"],
     # 监听的时间周期
     "intervals": ["1H", "4H", "1D"],
 
     "api": {
-        # 选项: "OKX" 或 "BINANCE"
+        # 选项: "OKX" 或 "BINANCE" 合约接口
         "active_exchange": "OKX",
         "OKX_BASE_URL": "https://www.okx.com",
-        "BINANCE_BASE_URL": "https://fapi.binance.com", # 币安合约接口
+        "BINANCE_BASE_URL": "https://fapi.binance.com",
         "TOP_N": 50,            # 自动抓取成交额前50的品种
         "MAX_CONCURRENT": 8,    # 最大并发请求数
         "KLINE_LIMIT": 1000,    # K线数量
