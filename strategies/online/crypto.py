@@ -68,10 +68,9 @@ logger = logging.getLogger(__name__)
 class DataEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.exchange = cfg.get("active_exchange", "OKX").upper()
-        # 确保基础 URL 存在
-        self.okx_base = cfg.get('OKX_BASE_URL', "https://www.okx.com")
-        self.binance_base = cfg.get('BINANCE_BASE_URL', "https://fapi.binance.com")
+        self.exchange = cfg.get("active_exchange").upper()
+        self.okx_base = cfg.get('OKX_BASE_URL')
+        self.binance_base = cfg.get('BINANCE_BASE_URL')
 
     async def get_active_symbols(self, session: aiohttp.ClientSession) -> List[str]:
         """公用入口：获取当前交易所成交额前 N 的品种"""
