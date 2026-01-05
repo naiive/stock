@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 import time
 from typing import Dict, Optional, Any, List
-from conf.config import TELEGRAM_CONFIG
+from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG
 
 # =====================================================
 # 0. 配置中心 (CONFIG)
@@ -49,8 +49,11 @@ CONFIG = {
     },
 
     "notify": {
-        "CONSOLE_LOG": True,    # 控制台日志输出
-        "TG_ENABLE": True,      # telegram bot 发送
+        "CONSOLE_LOG": True,     # 控制台日志输出
+        "WECOM_ENABLE": True,    # 企业微信机器人
+        "TG_ENABLE": True,       # telegram bot 发送
+
+        "WECOM_WEBHOOK": WECOM_CONFIG.get("WECOM_WEBHOOK"),
         "TG_TOKEN": TELEGRAM_CONFIG.get("BOT_TOKEN"),
         "TG_CHAT_ID": TELEGRAM_CONFIG.get("CHAT_ID")
     }
@@ -435,6 +438,7 @@ class NotifyEngine:
         self.running_tasks = []
 
     def process_results(self, results: list, interval: str):
+        """不同渠道消息通知：控制台、telegram、企微"""
         # 过滤 None
         results_list = [r for r in results if r is not None]
         if not results_list:
@@ -458,39 +462,19 @@ class NotifyEngine:
         # 2. Telegram：合并发送
         if self.cfg.get('TG_ENABLE') and signals:
             # 修改点：直接把所有有信号的结果传给 broadcast_to_tg
-            task = asyncio.create_task(self.broadcast_to_tg(signals, interval))
+            task = asyncio.create_task(self.tg_broadcast_and_send(signals, interval))
             self.running_tasks.append(task)
-            task.add_done_callback(
-                lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None
-            )
+            task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
-    async def broadcast_to_tg(self, signal_results, interval):
-        """
-        合并信号并分段发送（每 10 个信号合并为一条消息）
-        """
-        async with aiohttp.ClientSession() as session:
-            # 设置每条消息合并的数量，防止单条消息过长
-            chunk_size = 10
-            for i in range(0, len(signal_results), chunk_size):
-                chunk = signal_results[i:i + chunk_size]
+        # 3. 企业微信通知
+        if self.cfg.get('WECOM_ENABLE') and signals:
+            task = asyncio.create_task(self.wxcom_broadcast_and_send(signals, interval))
+            self.running_tasks.append(task)
+            task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
-                # 构建合并后的消息头部
-                header = f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
-                header += f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
-                header += f"━━━━━━━━━━━━━━\n"
-
-                body_parts = []
-                for res in chunk:
-                    body_parts.append(self.format_single_signal(res, interval))
-
-                final_msg = header + "\n\n".join(body_parts)
-
-                # 发送合并后的消息
-                await self.send_raw_tg_message(session, final_msg)
-                await asyncio.sleep(0.5)
-
+    # 共用消息卡片组装
     @staticmethod
-    def format_single_signal(res, interval):
+    def format_single_signal(res, interval, tag):
         """
         将单个信号格式化为字符串片段
         """
@@ -536,8 +520,8 @@ class NotifyEngine:
         trend_list = trend_str.split('-') if trend_str else []
         trend_icons = "".join(["⬆️" if "高" in t else "⬇️" for t in trend_list[-6:]]) if trend_list else ""
 
-        # 6. 构建消息模板
-        msg_text = (
+        # telegram消息模板
+        tg_msg_text = (
             f"⚡ <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
             f"━━━━━━━━━━━━━━\n"
             f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
@@ -548,30 +532,119 @@ class NotifyEngine:
             f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
             f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
         )
-        return msg_text
 
-    async def send_raw_tg_message(self, session, msg_text):
+        # 企业微信消息模板
+        wxcom_msg_text = (
+            f"💹 信号【{interval.upper()}】{symbol_link}\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
+            f"💸 信号: {signal_text}\n"
+            f"💰 价格: {price}{change_str}\n"
+            f"🧨 挤压: {res.get('bars', 0)} Bars\n"
+            f"📊 动能: {mom_icons if mom_icons else '无'}\n"
+            f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
+            f"📅 日期: {res.get('date', '-')}"
+        )
+
+        if tag == "telegram":
+            return tg_msg_text
+        elif tag == "wxcom":
+            return wxcom_msg_text
+        else:
+            logger.error("没有对应的消息卡片，请检查")
+            return None
+
+    # telegram
+    async def tg_broadcast_and_send(self, signal_results, interval, tag="telegram"):
         """
-        最终的 TG 发送底层逻辑
+        合并信号并分段发送（每 10 个信号合并为一条消息）
+        —— 已内联 TG 发送逻辑
         """
         token = self.cfg.get('TG_TOKEN')
         chat_id = self.cfg.get('TG_CHAT_ID')
         url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-        payload = {
-            "chat_id": chat_id,
-            "text": msg_text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-            "disable_notification": False
-        }
+        chunk_size = 10
 
-        try:
-            async with session.post(url, data=payload, timeout=10) as resp:
-                if resp.status != 200:
-                    logger.error(f"TG 发送失败 [{resp.status}]: {await resp.text()}")
-        except Exception as e:
-            logger.error(f"TG 网络异常: {e}")
+        async with aiohttp.ClientSession() as session:
+            for i in range(0, len(signal_results), chunk_size):
+                chunk = signal_results[i:i + chunk_size]
+
+                # 消息头
+                header = (
+                    f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
+                    f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
+                    f"━━━━━━━━━━━━━━\n"
+                )
+
+                body_parts = [
+                    self.format_single_signal(res, interval, tag)
+                    for res in chunk
+                ]
+
+                final_msg = header + "\n\n".join(body_parts)
+
+                payload = {
+                    "chat_id": chat_id,
+                    "text": final_msg,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                    "disable_notification": False
+                }
+
+                try:
+                    async with session.post(url, data=payload, timeout=10) as resp:
+                        if resp.status != 200:
+                            logger.error(
+                                f"TG 发送失败 [{resp.status}]: {await resp.text()}"
+                            )
+                except Exception as e:
+                    logger.error(f"TG 网络异常: {e}")
+
+                await asyncio.sleep(0.5)
+
+    # 企业微信
+    async def wxcom_broadcast_and_send(self, signal_results, interval, tag="wxcom"):
+        """
+        发送信号到企业微信群机器人
+        """
+        webhook_url = self.cfg.get('WECOM_WEBHOOK')
+        if not webhook_url:
+            return
+
+        async with aiohttp.ClientSession() as session:
+            # 企业微信建议每条消息不要太长，这里同样采用分段发送
+            chunk_size = 8
+            for i in range(0, len(signal_results), chunk_size):
+                chunk = signal_results[i:i + chunk_size]
+
+                # 构建 Markdown 内容
+                header = f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
+                header += f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
+                header += f"━━━━━━━━━━━━━━\n"
+
+                body_parts = []
+                for res in chunk:
+                    body_parts.append(self.format_single_signal(res, interval, tag))
+
+                final_content = header + "\n" + "\n".join(body_parts)
+
+                # 企业微信机器人 API 格式
+                payload = {
+                    "msgtype": "markdown",
+                    "markdown": {
+                        "content": final_content
+                    }
+                }
+
+                try:
+                    async with session.post(webhook_url, json=payload, timeout=10) as resp:
+                        if resp.status != 200:
+                            logger.error(f"WeCom 发送失败 [{resp.status}]: {await resp.text()}")
+                except Exception as e:
+                    logger.error(f"WeCom 网络异常: {e}")
+
+                await asyncio.sleep(0.5)
 
 
 # =====================================================
