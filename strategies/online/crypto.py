@@ -494,12 +494,23 @@ class NotifyEngine:
     @staticmethod
     def format_single_signal(res, interval):
         """
-        将单个信号格式化为字符串片段（原 send_to_telegram 的逻辑搬迁到这里）
+        将单个信号格式化为字符串片段
         """
-        # GPS-USDT-SWAP -> GPSUSDT
+        # 假设你在通知或主循环逻辑中获取了 symbol
         symbol = res.get('symbol', 'Unknown')
+        active_exchange = CONFIG["api"].get("active_exchange")
+
+        # OKX:     ETH-USDT-SWAP -> ETHUSDT
+        # Binance: ETHUSDT -> ETHUSDT
         tv_symbol = symbol.replace("-SWAP", "").replace("-", "")
-        tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
+
+        if active_exchange == "BINANCE":
+            # 币安合约 TradingView 格式通常是 BINANCE:ETHUSDT
+            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=BINANCE%3A{tv_symbol}"
+        else:
+            # OKX TradingView 格式通常是 OKX:ETHUSDT.P
+            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
+
         symbol_link = f'<a href="{tv_url}">{tv_symbol}</a>'
 
         raw_signal = res.get('signal', 'No')
