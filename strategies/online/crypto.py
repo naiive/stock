@@ -17,10 +17,10 @@ from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG
 # =====================================================
 CONFIG = {
     # 留空则自动获取全市场高成交额品种，统一使用 Token 名称，程序会自动转换后缀
-    "watch_list" : [],
-    # "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
+    # "watch_list" : [],
+    "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
     # 监听的时间周期
-    "intervals": ["1H", "4H", "1D"],
+    "intervals": ["1H"],
 
     "api": {
         # 选项: "OKX" 或 "BINANCE" 合约接口
@@ -446,6 +446,8 @@ class NotifyEngine:
 
         # 统计产生信号的数量
         signals = [r for r in results_list if r.get('signal') != "No"]
+        # 方便测试使用，全部信号打印
+        # signals = [r for r in results_list]
 
         # 1. 控制台打印
         if self.cfg.get('CONSOLE_LOG'):
@@ -459,14 +461,13 @@ class NotifyEngine:
                 else:
                     logger.info(f"{log_prefix} | N | {json_str}")
 
-        # 2. Telegram：合并发送
+        # 2. Telegram合并发送
         if self.cfg.get('TG_ENABLE') and signals:
-            # 修改点：直接把所有有信号的结果传给 broadcast_to_tg
             task = asyncio.create_task(self.tg_broadcast_and_send(signals, interval))
             self.running_tasks.append(task)
             task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
-        # 3. 企业微信通知
+        # 3. 企业微信通知合并发送
         if self.cfg.get('WECOM_ENABLE') and signals:
             task = asyncio.create_task(self.wxcom_broadcast_and_send(signals, interval))
             self.running_tasks.append(task)
