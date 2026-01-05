@@ -13,199 +13,203 @@ import time
 from typing import List, Dict, Optional, Any
 from aiohttp import web
 
-# =====================================================
-# Hugging Face 配置适配
-# =====================================================
-# 请在 HF Space 的 Settings -> Variables and Secrets 中添加这两个键值对
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
-
-# 直接在 Hugging Face 的环境变量（Secrets/Variables）里加一个配置：
+WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK")
 # Name: TZ
 # Value: Asia/Shanghai
 
-# =====================================================
-# 0. 配置中心 (CONFIG)
-# =====================================================
 CONFIG = {
-    # 留空则自动获取全市场高成交额品种
-    "watch_list": [],
-    # "watch_list": ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "DOGE-USDT-SWAP"],
-    # 监听的时间周期
+    "watch_list" : [],
     "intervals": ["1H", "4H", "1D"],
-
     "api": {
-        "BASE_URL": "https://www.okx.com",
-        "TOP_N": 50,  # 自动抓取成交额前50的品种
-        "MAX_CONCURRENT": 8,  # 最大并发请求数
-        "KLINE_LIMIT": 1000,  # K线数量
-        "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"]  # 排除稳定币之类的
+        "active_exchange": "OKX",
+        "OKX_BASE_URL": "https://www.okx.com",
+        "BINANCE_BASE_URL": "https://fapi.binance.com",
+        "TOP_N": 50,
+        "MAX_CONCURRENT": 8,
+        "KLINE_LIMIT": 1000,
+        "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"]
     },
-
     "strategy": {
-        "bb_length": 20,  # 布林带周期
-        "bb_mult": 2.0,  # 布林带标准差倍数
-        "kc_length": 20,  # 肯特纳通道周期
-        "kc_mult": 1.2,  # 肯特纳通道倍数 (Squeeze核心参数)
-        "use_true_range": True,  # True真实波动幅度/简单波动范围
-
-        "ema_length": 200,  # 长期趋势过滤
-
-        "srb_left": 15,  # 支撑压力左侧强度
-        "srb_right": 15,  # 支撑压力右侧强度
-
-        "min_sqz_bars": 6  # 至少6根K线才视为有效挤压
+        "bb_length": 20,
+        "bb_mult": 2.0,
+        "kc_length": 20,
+        "kc_mult": 1.2,
+        "use_true_range": True,
+        "min_sqz_bars": 6,
+        "ema_length": 200,
+        "srb_left": 15,
+        "srb_right": 15
     },
-
     "notify": {
-        "CONSOLE_LOG": True,  # 控制台日志输出
-        "TG_ENABLE": True,  # telegram bot 发送
-        "TG_TOKEN": TG_TOKEN,  # 修改：改为读取变量
-        "TG_CHAT_ID": TG_CHAT_ID  # 修改：改为读取变量
+        "CONSOLE_LOG": True,
+        "WECOM_ENABLE": True,
+        "TG_ENABLE": False,
+        "WECOM_WEBHOOK": WECOM_WEBHOOK,
+        "TG_TOKEN": TG_TOKEN,
+        "TG_CHAT_ID": TG_CHAT_ID
     }
 }
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-
-# =====================================================
-# 1. 数据引擎 (DataEngine)
-# =====================================================
 class DataEngine:
-    def __init__(self, api_cfg: dict):
-        self.cfg = api_cfg
-        self.base_url = self.cfg.get('BASE_URL')
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+        self.exchange = cfg.get("active_exchange").upper()
+        self.okx_base = cfg.get('OKX_BASE_URL')
+        self.binance_base = cfg.get('BINANCE_BASE_URL')
 
     async def get_active_symbols(self, session: aiohttp.ClientSession) -> List[str]:
-        """获取 OKX 活跃币种 (按 USDT 成交额排序)"""
-        url = f"{self.base_url}/api/v5/market/tickers"
+        if self.exchange == "BINANCE":
+            return await self._get_binance_active_symbols(session)
+        else:
+            return await self._get_okx_active_symbols(session)
+
+    async def _get_binance_active_symbols(self, session: aiohttp.ClientSession) -> List[str]:
+        url = f"{self.binance_base}/fapi/v1/ticker/24hr"
+        try:
+            async with session.get(url, timeout=10) as r:
+                data = await r.json()
+                if not isinstance(data, list):
+                    logger.error(f"❌ 币安 API 响应异常: {data}")
+                    return []
+
+                df = pd.DataFrame(data)
+                df['vol_usdt'] = pd.to_numeric(df['quoteVolume'], errors='coerce')
+
+                df = df[df['symbol'].str.endswith('USDT')]
+
+                exclude = self.cfg.get('EXCLUDE_TOKENS', [])
+                for token in exclude:
+                    df = df[~df['symbol'].str.contains(token)]
+
+                df = df.sort_values('vol_usdt', ascending=False)
+                top_n = self.cfg.get('TOP_N', 50)
+                symbols = df.head(top_n)['symbol'].tolist()
+
+                logger.info(f"🔥 [Binance] 当前成交额前5: {symbols[:5]}")
+                return symbols
+        except Exception as e:
+            logger.error(f"💥 获取币安活跃币种失败: {e}")
+            return []
+
+    async def _get_okx_active_symbols(self, session: aiohttp.ClientSession) -> List[str]:
+        url = f"{self.okx_base}/api/v5/market/tickers"
         params = {"instType": "SWAP"}
         try:
             async with session.get(url, params=params, timeout=10) as r:
                 res = await r.json()
                 data = res.get('data', [])
+                if not data: return []
 
-                if not data:
-                    logger.error("❌ 获取 Tickers 失败，数据为空")
-                    return []
-
-                # 1. 转为 DataFrame
                 df = pd.DataFrame(data)
-
-                # 2. 关键步骤：强制将 USDT 成交额字段转为浮点数
-                # volCcy24h 是以计价货币（USDT）为单位的成交额
                 df['vol_usdt'] = pd.to_numeric(df['volCcy24h'], errors='coerce')
-
-                # 3. 过滤：只保留 USDT 永续合约
                 df = df[df['instId'].str.endswith('-USDT-SWAP')]
 
-                # 4. 排除你配置中的特定币种
-                exclude_list = self.cfg.get('EXCLUDE_TOKENS', [])
-                for token in exclude_list:
+                exclude = self.cfg.get('EXCLUDE_TOKENS', [])
+                for token in exclude:
                     df = df[~df['instId'].str.contains(token)]
 
-                # 5. 核心排序：按 USDT 成交额从大到小排列 (ascending=False)
                 df = df.sort_values('vol_usdt', ascending=False)
-
-                # 打印前 5 名核实
-                top_5_check = df.head(5)[['instId', 'vol_usdt']].values.tolist()
-                logger.info(f"🔝 当前成交额前5名: {top_5_check}")
-
-                # 6. 提取前 N 个
                 top_n = self.cfg.get('TOP_N', 50)
-                top_symbols = df.head(top_n)['instId'].tolist()
+                symbols = df.head(top_n)['instId'].tolist()
 
-                # 7. 额外保险：确保 BTC/ETH 无论如何都在列表里
                 for core in ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]:
-                    if core in df['instId'].values and core not in top_symbols:
-                        top_symbols.insert(0, core)
+                    if core not in symbols: symbols.insert(0, core)
 
-                return top_symbols[:top_n]
-
+                logger.info(f"🔝 [OKX] 当前成交额前5: {symbols[:5]}")
+                return symbols[:top_n]
         except Exception as e:
-            logger.error(f"💥 按成交额排序获取币种失败: {e}")
+            logger.error(f"💥 获取 OKX 活跃币种失败: {e}")
             return []
 
+    def format_symbol(self, token: str) -> str:
+        clean_token = token.upper().replace("-USDT-SWAP", "").replace("USDT", "")
+        if self.exchange == "OKX":
+            return f"{clean_token}-USDT-SWAP"
+        else:
+            return f"{clean_token}USDT"
+
     async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[pd.DataFrame]:
-        """抓取 OKX K线数据并自动处理参数格式"""
-        url = f"{self.base_url}/api/v5/market/candles"
+        if self.exchange == "BINANCE":
+            return await self._fetch_binance_klines(session, symbol, interval)
+        else:
+            return await self._fetch_okx_klines(session, symbol, interval)
 
-        # OKX 转换逻辑：将 "1h" 转换为 "1H", "1d" 转换为 "1D"
-        # 如果你传入的是 "1h"，OKX 必须接收 "1H"
-        okx_interval = interval.upper() if 'h' in interval or 'd' in interval else interval
-
+    async def _fetch_okx_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[pd.DataFrame]:
+        url = f"{self.okx_base}/api/v5/market/candles"
+        okx_interval = interval.upper()
         params = {
             "instId": symbol,
             "bar": okx_interval,
-            "limit": self.cfg.get('KLINE_LIMIT', 100)
+            "limit": self.cfg.get('KLINE_LIMIT', 1000)
         }
-
         try:
             async with session.get(url, params=params, timeout=10) as r:
-                if r.status != 200:
-                    err_msg = await r.text()
-                    logger.error(f"OKX API 响应异常: {r.status} - {err_msg}")
-                    return None
-
                 res = await r.json()
                 data = res.get('data', [])
+                if not data: return None
 
-                if not data:
-                    return None
-
-                # OKX 返回格式: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
-                # 0:时间戳, 1:开, 2:高, 3:低, 4:收, 5:交易量(张)
                 df = pd.DataFrame(data, columns=['ts', 'o', 'h', 'l', 'c', 'v', 'volCcy', 'volCcyQuote', 'confirm'])
-
-                # 重要：OKX 数据是倒序的（最新在前），必须翻转回正序进行技术指标计算
                 df = df.iloc[::-1].reset_index(drop=True)
 
-                # 剔除未闭合的 K 线
-                # OKX 的 confirm='0' 表示正在走，'1' 表示已闭合
-                # 你原本的逻辑是 iloc[:-1]，在翻转后这依然有效
-                if len(df) > 0:
-                    df = df.iloc[:-1].copy()
+                df = df[df['confirm'] == '1'].copy()
 
-                # 转换数值
                 df = df[['ts', 'o', 'h', 'l', 'c', 'v']].astype(float)
                 df.columns = ['ts', 'open', 'high', 'low', 'close', 'volume']
-
-                # 时间转换为北京时间
                 df['date'] = pd.to_datetime(df['ts'], unit='ms') + timedelta(hours=8)
                 df.set_index('date', inplace=True)
                 return df
-
         except Exception as e:
-            logger.error(f"OKX 抓取K线数据失败 ({symbol}): {e}")
+            logger.error(f"OKX Fetch Error ({symbol}): {e}")
             return None
 
+    async def _fetch_binance_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[pd.DataFrame]:
+        url = f"{self.binance_base}/fapi/v1/klines"
+        bn_interval = interval.lower()
+        params = {
+            "symbol": symbol,
+            "interval": bn_interval,
+            "limit": self.cfg.get('KLINE_LIMIT', 1000)
+        }
+        try:
+            async with session.get(url, params=params, timeout=10) as r:
+                data = await r.json()
+                if isinstance(data, dict) or not data: return None
 
-# =====================================================
-# 2. 指标引擎 (IndicatorEngine)
-# =====================================================
+                df = pd.DataFrame(data).iloc[:-1]
+                df = df[[0, 1, 2, 3, 4, 5]].astype(float)
+                df.columns = ['ts', 'open', 'high', 'low', 'close', 'volume']
+                df['date'] = pd.to_datetime(df['ts'], unit='ms') + timedelta(hours=8)
+                df.set_index('date', inplace=True)
+                return df
+        except Exception as e:
+            logger.error(f"Binance Fetch Error ({symbol}): {e}")
+            return None
+
 class IndicatorEngine:
     def __init__(self, st_cfg: dict):
         self.cfg = st_cfg
 
     @staticmethod
     def tv_linreg(series: pd.Series, length: int):
-        """线性回归拟合"""
         if pd.isna(series).any() or len(series) < length:
             return np.nan
         x = np.arange(length)
-        y_vals = series.values[-length:]  # 确保只取最新长度
+        y_vals = series.values[-length:]
         A = np.vstack([x, np.ones(length)]).T
         try:
             m, b = np.linalg.lstsq(A, y_vals, rcond=None)[0]
             return m * (length - 1) + b
         except Exception as e:
-            logger.error(f"线性回归拟合失败: {e}")
+            logger.error(f"linear regression fitting failed: {e}")
             return np.nan
 
     @staticmethod
     def true_range(df: pd.DataFrame) -> pd.Series:
-        """计算真实波幅 TR"""
         prev_close = df['close'].shift(1)
         tr1 = df['high'] - df['low']
         tr2 = (df['high'] - prev_close).abs()
@@ -214,7 +218,6 @@ class IndicatorEngine:
 
     @staticmethod
     def add_squeeze_counter(df: pd.DataFrame) -> pd.DataFrame:
-        """给每根K线打上一个 连续积压/释放计数"""
         counter = 0
         current_state = None
         sqz_id_list = []
@@ -235,7 +238,6 @@ class IndicatorEngine:
 
     @staticmethod
     def get_squeeze_momentum_histogram_color(val, val_prev):
-        """动能柱颜色"""
         if pd.isna(val) or pd.isna(val_prev):
             return "数据不足"
         if val > 0:
@@ -249,47 +251,34 @@ class IndicatorEngine:
         df = df.copy()
         close, high, low = df['close'], df['high'], df['low']
 
-        # 计算Bollinger Bands (BB)
-        # 通过移动平均+标准差计算BB上下轨
         basis = close.rolling(self.cfg.get('bb_length')).mean()
         dev = self.cfg.get('kc_mult') * close.rolling(self.cfg.get('bb_length')).std(ddof=0)
         upperBB, lowerBB = basis + dev, basis - dev
 
-        # 计算Keltner Channels (KC)
-        # 通过ATR或高低差计算KC上下轨
-        # 用于判断市场是否处于低波动（挤压）状态
         ma = close.rolling(self.cfg.get('kc_length')).mean()
         r = self.true_range(df) if self.cfg.get('use_true_range') else (high - low)
         rangema = r.rolling(self.cfg.get('kc_length')).mean()
         upperKC, lowerKC = ma + rangema * self.cfg.get('kc_mult'), ma - rangema * self.cfg.get('kc_mult')
 
-        # 判断Squeeze状态 {"ON":"积压", "OFF":"释放", "NO":无}
         sqzOn = (lowerBB > lowerKC) & (upperBB < upperKC)
         sqzOff = (lowerBB < lowerKC) & (upperBB > upperKC)
         df["sqz_status"] = np.select([sqzOn, sqzOff], ["ON", "OFF"], default="NO")
 
-        # 计算Momentum柱的线性趋势
         highest_h = high.rolling(self.cfg.get('kc_length')).max()
         lowest_l = low.rolling(self.cfg.get('kc_length')).min()
         avg_hl = (highest_h + lowest_l) / 2
         sma_close = close.rolling(self.cfg.get('kc_length')).mean()
         mid = (avg_hl + sma_close) / 2
         source_mid = close - mid
-        # 柱状图值大小，0轴上为正，0轴下为负
         histogram_value = source_mid.rolling(self.cfg.get('kc_length')).apply(lambda x: self.tv_linreg(pd.Series(x), self.cfg.get('kc_length')), raw=False)
 
-        # 动能柱数值
         df["sqz_hvalue"] = histogram_value
-        # 前一根动能柱数值，用于判断动能柱颜色：亮绿色、绿色、亮红色、红色
         df["sqz_pre_hvalue"] = histogram_value.shift(1)
-        # 给每根K线打上一个连续积压或释放计数值，用于判断连续积压
         df = self.add_squeeze_counter(df)
 
-        # 柱状图颜色
         df["sqz_hcolor"] = df.apply(
             lambda re: self.get_squeeze_momentum_histogram_color(re["sqz_hvalue"], re["sqz_pre_hvalue"]), axis=1)
 
-        # 删除一些中间结果列
         df.drop(columns=["sqz_pre_hvalue"], inplace=True)
 
         return df
@@ -300,11 +289,8 @@ class IndicatorEngine:
         return df
 
     def support_resistance_indicator(self, df: pd.DataFrame) -> pd.DataFrame:
-        # 总窗口长度
         window = self.cfg.get('srb_left') + self.cfg.get('srb_right') + 1
 
-        # 1. 寻找局部极值点 (Pivot High / Pivot Low)
-        # center=True 配合窗口计算，判断中间那根 K 线是否是区间最值
         df['is_min'] = df['low'].rolling(window, center=True).apply(
             lambda x: 1 if x[self.cfg.get('srb_left')] == np.min(x) else 0, raw=True
         )
@@ -312,8 +298,6 @@ class IndicatorEngine:
             lambda x: 1 if x[self.cfg.get('srb_left')] == np.max(x) else 0, raw=True
         )
 
-        # 2. 标记价格并向前填充 (Forward Fill)
-        # 当发现新的分型点时更新价格，否则沿用之前的价格线
         df['srb_sup'] = np.where(df['is_min'] == 1, df['low'], np.nan)
         df['srb_res'] = np.where(df['is_max'] == 1, df['high'], np.nan)
 
@@ -325,24 +309,13 @@ class IndicatorEngine:
         return df
 
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
-        """综合调用所有指标方法"""
         df = df.copy()
-
-        # 1. 计算Squeeze
         df = self.squeeze_momentum_indicator(df)
-
-        # 2. 计算趋势过滤
         df = self.ema_indicator(df)
-
-        # 3. 计算支撑阻力
         df = self.support_resistance_indicator(df)
 
         return df
 
-
-# =====================================================
-# 3. 策略引擎 (StrategyEngine)
-# =====================================================
 class StrategyEngine:
     def __init__(self, st_cfg: dict):
         self.cfg = st_cfg
@@ -351,7 +324,6 @@ class StrategyEngine:
 
         cur = df.iloc[-1]
         prev = df.iloc[-2]
-        # 涨幅
         change = (cur['close'] / prev['close'] - 1) * 100
 
         signal = "No"
@@ -386,25 +358,18 @@ class StrategyEngine:
             "trend_s": "-".join(ts)
         }
 
-
-# =====================================================
-# 4. 通知引擎 (NotifyEngine)
-# =====================================================
 class NotifyEngine:
     def __init__(self, notify_cfg: dict):
         self.cfg = notify_cfg
         self.running_tasks = []
 
     def process_results(self, results: list, interval: str):
-        # 过滤 None
         results_list = [r for r in results if r is not None]
         if not results_list:
             return
 
-        # 统计产生信号的数量
         signals = [r for r in results_list if r.get('signal') != "No"]
 
-        # 1. 控制台打印
         if self.cfg.get('CONSOLE_LOG'):
             logger.info(f"[{interval}] 扫描完成 | 监控品种: {len(results_list)} | 触发信号: {len(signals)}")
             for item in results_list:
@@ -416,50 +381,26 @@ class NotifyEngine:
                 else:
                     logger.info(f"{log_prefix} | N | {json_str}")
 
-        # 2. Telegram：合并发送
         if self.cfg.get('TG_ENABLE') and signals:
-            # 修改点：直接把所有有信号的结果传给 broadcast_to_tg
-            task = asyncio.create_task(self.broadcast_to_tg(signals, interval))
+            task = asyncio.create_task(self.tg_broadcast_and_send(signals, interval))
             self.running_tasks.append(task)
-            task.add_done_callback(
-                lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None
-            )
+            task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
-    async def broadcast_to_tg(self, signal_results, interval):
-        """
-        合并信号并分段发送（每 10 个信号合并为一条消息）
-        """
-        async with aiohttp.ClientSession() as session:
-            # 设置每条消息合并的数量，防止单条消息过长
-            chunk_size = 10
-            for i in range(0, len(signal_results), chunk_size):
-                chunk = signal_results[i:i + chunk_size]
-
-                # 构建合并后的消息头部
-                header = f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
-                header += f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
-                header += f"━━━━━━━━━━━━━━\n"
-
-                body_parts = []
-                for res in chunk:
-                    body_parts.append(self.format_single_signal(res, interval))
-
-                final_msg = header + "\n\n".join(body_parts)
-
-                # 发送合并后的消息
-                await self.send_raw_tg_message(session, final_msg)
-                await asyncio.sleep(0.5)
+        if self.cfg.get('WECOM_ENABLE') and signals:
+            task = asyncio.create_task(self.wecom_broadcast_and_send(signals, interval))
+            self.running_tasks.append(task)
+            task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
     @staticmethod
-    def format_single_signal(res, interval):
-        """
-        将单个信号格式化为字符串片段（原 send_to_telegram 的逻辑搬迁到这里）
-        """
-        # GPS-USDT-SWAP -> GPSUSDT
+    def format_single_signal(res, interval, tag):
         symbol = res.get('symbol', 'Unknown')
+        active_exchange = CONFIG["api"].get("active_exchange")
         tv_symbol = symbol.replace("-SWAP", "").replace("-", "")
-        tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
-        symbol_link = f'<a href="{tv_url}">{tv_symbol}</a>'
+
+        if active_exchange == "BINANCE":
+            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=BINANCE%3A{tv_symbol}"
+        else:
+            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
 
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":
@@ -476,57 +417,129 @@ class NotifyEngine:
         change = res.get('change', 0)
         change_str = f"({'+' if change >= 0 else ''}{change}%)"
 
-        # 动能图标
         energy_str = str(res.get('energy', ""))
         energy_items = energy_str.split('-') if energy_str else []
         recent_items = energy_items[-6:]
         mom_icons = "".join(["🟢" if "绿" in item else "🔴" for item in recent_items])
 
-        # 趋势图标
         trend_list = trend_str.split('-') if trend_str else []
         trend_icons = "".join(["⬆️" if "高" in t else "⬇️" for t in trend_list[-6:]]) if trend_list else ""
 
-        # 6. 构建消息模板
-        msg_text = (
-            f"⚡ <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
-            f"💹 <b>信号:</b> <code>{signal_text}</code>\n"
-            f"💰 <b>价格:</b> <code>{price}{change_str}</code>\n"
-            f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
-            f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
-            f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
-            f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
-        )
-        return msg_text
+        if tag == "telegram":
+            symbol_link = f'<a href="{tv_url}">{tv_symbol}</a>'
+            tg_msg_text = (
+                f"💹 <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
+                f"💸 <b>信号:</b> <code>{signal_text}</code>\n"
+                f"💰 <b>价格:</b> <code>{price}{change_str}</code>\n"
+                f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
+                f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
+                f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
+                f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
+            )
+            return tg_msg_text
 
-    async def send_raw_tg_message(self, session, msg_text):
-        """
-        最终的 TG 发送底层逻辑
-        """
+        elif tag == "wecom":
+            symbol_link = f'[{tv_symbol}]({tv_url})'
+            wecom_msg_text = (
+                f"💹 信号【{interval.upper()}】{symbol_link}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
+                f"💸 信号: {signal_text}\n"
+                f"💰 价格: {price}{change_str}\n"
+                f"🧨 挤压: {res.get('bars', 0)} Bars\n"
+                f"📊 动能: {mom_icons if mom_icons else '无'}\n"
+                f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
+                f"📅 日期: {res.get('date', '-')}"
+            )
+            return wecom_msg_text
+        else:
+            logger.error("notify configuration error, please check")
+            return None
+
+    async def tg_broadcast_and_send(self, signal_results, interval, tag="telegram"):
         token = self.cfg.get('TG_TOKEN')
         chat_id = self.cfg.get('TG_CHAT_ID')
         url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-        payload = {
-            "chat_id": chat_id,
-            "text": msg_text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-            "disable_notification": False
-        }
+        chunk_size = 10
 
-        try:
-            async with session.post(url, data=payload, timeout=10) as resp:
-                if resp.status != 200:
-                    logger.error(f"TG 发送失败 [{resp.status}]: {await resp.text()}")
-        except Exception as e:
-            logger.error(f"TG 网络异常: {e}")
+        total_signals = len(signal_results)
 
+        async with aiohttp.ClientSession() as session:
+            for i in range(0, len(signal_results), chunk_size):
+                chunk = signal_results[i:i + chunk_size]
 
-# =====================================================
-# 5. 定时引擎 (TimeEngine)
-# =====================================================
+                header = (
+                    f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
+                    f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
+                    f"━━━━━━━━━━━━━━\n"
+                )
+
+                body_parts = [ self.format_single_signal(res, interval, tag) for res in chunk ]
+
+                final_msg = header + "\n\n".join(body_parts)
+
+                payload = {
+                    "chat_id": chat_id,
+                    "text": final_msg,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                    "disable_notification": False
+                }
+
+                try:
+                    async with session.post(url, data=payload, timeout=10) as resp:
+                        if resp.status != 200:
+                            logger.error( f"TG 发送失败 [{resp.status}]: {await resp.text()}")
+                except Exception as e:
+                    logger.error(f"TG 网络异常: {e}")
+
+                await asyncio.sleep(0.5)
+
+        logger.info(f"[{interval}] telegram通知发送完毕 | 总信号数: {total_signals}")
+
+    async def wecom_broadcast_and_send(self, signal_results, interval, tag="wecom"):
+        webhook_url = self.cfg.get('WECOM_WEBHOOK')
+        if not webhook_url:
+            return
+
+        chunk_size = 8
+
+        total_signals = len(signal_results)
+
+        async with aiohttp.ClientSession() as session:
+            for i in range(0, len(signal_results), chunk_size):
+                chunk = signal_results[i:i + chunk_size]
+
+                header = (
+                    f"🚀 信号报告【{interval.upper()}】\n"
+                    f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
+                    f"━━━━━━━━━━━━━━\n"
+                )
+
+                body_parts = []
+                for res in chunk:
+                    text = self.format_single_signal(res, interval, tag)
+                    if text:
+                        body_parts.append(text.rstrip())
+
+                final_content = header + "\n\n\n".join(body_parts)
+
+                payload = { "msgtype": "markdown",  "markdown": { "content": final_content } }
+
+                try:
+                    async with session.post(webhook_url, json=payload, timeout=10) as resp:
+                        if resp.status != 200:
+                            logger.error(f"wecom 发送失败 [{resp.status}]: {await resp.text()}")
+                except Exception as e:
+                    logger.error(f"wecom 网络异常: {e}")
+
+                await asyncio.sleep(0.5)
+
+        logger.info(f"[{interval}] wecom通知发送完毕 | 总信号数: {total_signals}")
+
 class TimeEngine:
 
     @staticmethod
@@ -535,17 +548,15 @@ class TimeEngine:
         val = int(interval[:-1])
         unit = interval[-1].lower()
 
-        # 1. 先确定延迟偏移量 (单位：秒)
         if unit == 'm':
-            offset_sec = 10
+            offset_sec = 3
         elif unit == 'h':
-            offset_sec = 120  # 2分钟
-        elif unit == 'd':
-            offset_sec = 300  # 5分钟
-        else:
             offset_sec = 5
+        elif unit == 'd':
+            offset_sec = 5
+        else:
+            offset_sec = 3
 
-        # 2. 计算基础对齐时间点 (不带 offset 的整点)
         if unit == 'm':
             target_min = ((now.minute // val) + 1) * val
             if target_min >= 60:
@@ -567,35 +578,22 @@ class TimeEngine:
         else:
             return 60.0
 
-        # 3. 使用 timedelta 加上偏移量，而不是在 replace 里改 second
         next_run = base_time + timedelta(seconds=offset_sec)
 
-        # 4. 计算差值
         wait_sec = (next_run - now).total_seconds()
 
-        # 如果当前就在延迟窗内（wait_sec 为负），则强制返回 1 秒后执行或跳到下一周期
         return wait_sec if wait_sec > 0 else 1.0
 
-
-# =====================================================
-# 6. 扫描引擎 (ScanEngine)
-# =====================================================
 class ScanEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        # 数据引擎
         self.data_e = DataEngine(cfg['api'])
-        # 指标引擎
         self.ind_e = IndicatorEngine(cfg['strategy'])
-        # 策略引擎
         self.strat_e = StrategyEngine(cfg['strategy'])
-        # 通知引擎
         self.notify_e = NotifyEngine(cfg['notify'])
-        # 定时引擎
-        self.timer = TimeEngine()
+        self.timer_e = TimeEngine()
 
     async def _proc_symbol(self, session, symbol, interval, sem):
-        """单个币种的处理流水线"""
         async with sem:
             try:
                 raw = await self.data_e.fetch_klines(session, symbol, interval)
@@ -604,16 +602,13 @@ class ScanEngine:
                     logger.error(f"❌ {symbol} 获取数据失败 (API返回空)")
                     return None
 
-                # 2. 检查数据长度
                 data_len = len(raw)
-                if data_len < 200:  # 策略计算 EMA200 至少需要 200 条
+                if data_len < 200:
                     logger.warning(f"⚠️ {symbol} 数据条数不足: {data_len} (需要至少200条)")
                     return None
 
-                # 3. 计算指标
                 df = self.ind_e.calculate(raw)
 
-                # 4. 执行策略
                 res = self.strat_e.execute(df, symbol, interval)
                 return res
 
@@ -622,63 +617,56 @@ class ScanEngine:
                 return None
 
     async def scan_cycle(self, session, symbols, interval):
-        """单次循环调度"""
         sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
         tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
         results = list(await asyncio.gather(*tasks))
-        # 这里的 process_results 内部会过滤没有信号的数据并发送 TG
         self.notify_e.process_results(results, interval)
 
     async def interval_worker(self, session, interval):
         logger.info(f"🟢 [{interval}] 周期监控任务已启动")
-
-        # 记录上一次成功执行的“时间槽”，防止在同一个周期内重复触发
         last_run_slot = None
 
         while True:
-            # 1. 计算距离“下一次”对齐点的时间
-            wait_sec = self.timer.get_wait_seconds(interval)
+            wait_sec = self.timer_e.get_wait_seconds(interval)
 
-            # 2. 只有在需要等待时才休眠
             if wait_sec > 0:
-                # 计算目标时间用于日志展示
                 target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
                 logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
                 await asyncio.sleep(wait_sec)
 
-            # 3. 确定当前的时间槽（例如 11:00），防止重复扫描
-            # 如果 get_wait_seconds 逻辑正确，这里其实是双保险
             current_slot = datetime.now().replace(second=0, microsecond=0)
             if last_run_slot == current_slot:
-                # 如果当前分钟已经跑过了，强制休眠一小会儿避开这个槽位
                 await asyncio.sleep(1)
                 continue
 
             try:
                 start_time = time.time()
 
-                # 执行扫描逻辑
-                symbols = self.cfg.get("watch_list") or await self.data_e.get_active_symbols(session)
-                await self.scan_cycle(session, symbols, interval)
+                watch_list = self.cfg.get("watch_list", [])
 
-                # 确保 TG 消息发出
-                if self.notify_e.running_tasks:
-                    await asyncio.gather(*self.notify_e.running_tasks)
+                if watch_list and len(watch_list) > 0:
+                    symbols = [self.data_e.format_symbol(s) for s in watch_list]
+                else:
+                    symbols = await self.data_e.get_active_symbols(session)
 
-                # 标记本次槽位已完成
-                last_run_slot = current_slot
+                if symbols:
+                    await self.scan_cycle(session, symbols, interval)
 
-                duration = time.time() - start_time
-                logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
+                    if self.notify_e.running_tasks:
+                        await asyncio.gather(*self.notify_e.running_tasks)
+
+                    last_run_slot = current_slot
+                    duration = time.time() - start_time
+                    logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
+                else:
+                    logger.warning(f"⚠️ [{interval}] 未获取到可扫描的币种")
 
             except Exception as e:
-                logger.error(f"❌ [{interval}] 异常: {e}")
-                # 报错后不要立即重试，防止死循环轰炸 API
+                logger.error(f"❌ [{interval}] 异常: {e}", exc_info=True)
                 await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
 
     @staticmethod
     async def heartbeat_worker():
-        """独立的心跳协程"""
         while True:
             logger.info("💓 机器人运行中，系统心跳正常")
             await asyncio.sleep(8 * 3600)
@@ -688,51 +676,41 @@ class ScanEngine:
             try:
                 logger.info("⚡ 启动即时扫描调试开始...")
 
-                # 1. 明确检查 symbols
-                symbols = self.cfg.get("watch_list")
+                watch_list = self.cfg.get("watch_list", [])
 
-                if not symbols or len(symbols) == 0:
+                if watch_list and len(watch_list) > 0:
+                    symbols = [self.data_e.format_symbol(s) for s in watch_list]
+                    logger.info(f"📋 使用配置列表 (已转换格式): {symbols}")
+                else:
                     symbols = await self.data_e.get_active_symbols(session)
 
-                # 2. 检查 symbols 是否有效
                 if symbols and len(symbols) > 0:
                     await self.scan_cycle(session, symbols, "1H")
                 else:
                     logger.error("❌ 严重错误：最终 symbols 列表为空，无法扫描！")
 
             except Exception as e:
-                # 这里的 exc_info=True 会打印完整的报错位置（行号）
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
 
-            # 启动后续 Worker...
             workers = [self.interval_worker(session, i) for i in self.cfg.get('intervals')]
             workers.append(self.heartbeat_worker())
             await asyncio.gather(*workers)
 
-
-# =====================================================
-# Hugging Face 入口函数
-# =====================================================
 async def handle_health(request):
     return web.Response(text="Bot is running", content_type='text/html')
 
-
 async def main():
-    # 启动健康检查 Web 服务器（Hugging Face 必要）
     app = web.Application()
     app.router.add_get('/', handle_health)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 7860)  # HF 默认端口
+    site = web.TCPSite(runner, '0.0.0.0', 7860)
     await site.start()
-
-    # 运行原本的机器人逻辑
     scanner = ScanEngine(CONFIG)
     await scanner.run()
-
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.error("APP 已手动停止")
+        logger.error("APP stopped manually")
