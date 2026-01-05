@@ -17,7 +17,8 @@ from conf.config import TELEGRAM_CONFIG
 # =====================================================
 CONFIG = {
     # 留空则自动获取全市场高成交额品种，统一使用 Token 名称，程序会自动转换后缀
-    "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
+    "watch_list" : [],
+    # "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
     # 监听的时间周期
     "intervals": ["1H", "4H", "1D"],
 
@@ -26,7 +27,7 @@ CONFIG = {
         "active_exchange": "OKX",
         "OKX_BASE_URL": "https://www.okx.com",
         "BINANCE_BASE_URL": "https://fapi.binance.com",
-        "TOP_N": 50,            # 自动抓取成交额前50的品种
+        "TOP_N": 5,            # 自动抓取成交额前50的品种
         "MAX_CONCURRENT": 8,    # 最大并发请求数
         "KLINE_LIMIT": 1000,    # K线数量
         "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"] # 排除稳定币之类的
@@ -97,13 +98,13 @@ class DataEngine:
                 df = df[df['symbol'].str.endswith('USDT')]
 
                 # 排除配置中的 Token
-                exclude = self.cfg['api'].get('EXCLUDE_TOKENS', [])
+                exclude = self.cfg.get('EXCLUDE_TOKENS', [])
                 for token in exclude:
                     df = df[~df['symbol'].str.contains(token)]
 
                 # 排序并取前 N
                 df = df.sort_values('vol_usdt', ascending=False)
-                top_n = self.cfg['api'].get('TOP_N', 50)
+                top_n = self.cfg.get('TOP_N', 50)
                 symbols = df.head(top_n)['symbol'].tolist()
 
                 logger.info(f"🔥 [Binance] 当前成交额前5: {symbols[:5]}")
@@ -129,12 +130,12 @@ class DataEngine:
                 df['vol_usdt'] = pd.to_numeric(df['volCcy24h'], errors='coerce')
                 df = df[df['instId'].str.endswith('-USDT-SWAP')]
 
-                exclude = self.cfg['api'].get('EXCLUDE_TOKENS', [])
+                exclude = self.cfg.get('EXCLUDE_TOKENS', [])
                 for token in exclude:
                     df = df[~df['instId'].str.contains(token)]
 
                 df = df.sort_values('vol_usdt', ascending=False)
-                top_n = self.cfg['api'].get('TOP_N', 50)
+                top_n = self.cfg.get('TOP_N', 50)
                 symbols = df.head(top_n)['instId'].tolist()
 
                 # 确保 BTC/ETH 在列表里
