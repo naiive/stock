@@ -27,7 +27,7 @@ CONFIG = {
         "active_exchange": "OKX",
         "OKX_BASE_URL": "https://www.okx.com",
         "BINANCE_BASE_URL": "https://fapi.binance.com",
-        "TOP_N": 5,            # 自动抓取成交额前50的品种
+        "TOP_N": 50,            # 自动抓取成交额前50的品种
         "MAX_CONCURRENT": 8,    # 最大并发请求数
         "KLINE_LIMIT": 1000,    # K线数量
         "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"] # 排除稳定币之类的
