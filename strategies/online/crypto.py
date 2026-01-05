@@ -17,16 +17,16 @@ from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG
 # =====================================================
 CONFIG = {
     # 留空则自动获取全市场高成交额品种，统一使用 Token 名称，程序会自动转换后缀
-    # "watch_list" : [],
-    "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
+    "watch_list" : [],
+    # "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
+
     # 监听的时间周期
-    "intervals": ["1H"],
+    "intervals": ["1H", "4H", "1D"],
 
     "api": {
-        # 选项: "OKX" 或 "BINANCE" 合约接口
-        "active_exchange": "OKX",
-        "OKX_BASE_URL": "https://www.okx.com",
-        "BINANCE_BASE_URL": "https://fapi.binance.com",
+        "active_exchange": "OKX", # OKX 或 BINANCE
+        "OKX_BASE_URL": "https://www.okx.com",          # OKX合约接口y域名
+        "BINANCE_BASE_URL": "https://fapi.binance.com", # binance合约接口y域名
         "TOP_N": 50,            # 自动抓取成交额前50的品种
         "MAX_CONCURRENT": 8,    # 最大并发请求数
         "KLINE_LIMIT": 1000,    # K线数量
@@ -39,19 +39,18 @@ CONFIG = {
         "kc_length": 20,        # 肯特纳通道周期
         "kc_mult": 1.2,         # 肯特纳通道倍数 (Squeeze核心参数)
         "use_true_range": True, # True真实波动幅度/简单波动范围
+        "min_sqz_bars": 6,      # 至少6根K线才视为有效挤压
 
-        "ema_length": 200,      # 长期趋势过滤
+        "ema_length": 200,      # EMA
 
-        "srb_left": 15,         # 支撑压力左侧强度
-        "srb_right": 15,        # 支撑压力右侧强度
-
-        "min_sqz_bars": 6       # 至少6根K线才视为有效挤压
+        "srb_left": 15,         # 支撑压力左侧
+        "srb_right": 15         # 支撑压力右侧
     },
 
     "notify": {
         "CONSOLE_LOG": True,     # 控制台日志输出
-        "WECOM_ENABLE": True,    # 企业微信机器人
-        "TG_ENABLE": True,       # telegram bot 发送
+        "WECOM_ENABLE": True,    # wecom机器人
+        "TG_ENABLE": False,      # telegram bot 发送
 
         "WECOM_WEBHOOK": WECOM_CONFIG.get("WECOM_WEBHOOK"),
         "TG_TOKEN": TELEGRAM_CONFIG.get("BOT_TOKEN"),
@@ -446,8 +445,6 @@ class NotifyEngine:
 
         # 统计产生信号的数量
         signals = [r for r in results_list if r.get('signal') != "No"]
-        # 方便测试使用，全部信号打印
-        # signals = [r for r in results_list]
 
         # 1. 控制台打印
         if self.cfg.get('CONSOLE_LOG'):
@@ -469,7 +466,7 @@ class NotifyEngine:
 
         # 3. 企业微信通知合并发送
         if self.cfg.get('WECOM_ENABLE') and signals:
-            task = asyncio.create_task(self.wxcom_broadcast_and_send(signals, interval))
+            task = asyncio.create_task(self.wecom_broadcast_and_send(signals, interval))
             self.running_tasks.append(task)
             task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
@@ -493,8 +490,6 @@ class NotifyEngine:
         else:
             # OKX TradingView 格式通常是 OKX:ETHUSDT.P
             tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
-
-        symbol_link = f'<a href="{tv_url}">{tv_symbol}</a>'
 
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":
@@ -521,36 +516,41 @@ class NotifyEngine:
         trend_list = trend_str.split('-') if trend_str else []
         trend_icons = "".join(["⬆️" if "高" in t else "⬇️" for t in trend_list[-6:]]) if trend_list else ""
 
-        # telegram消息模板
-        tg_msg_text = (
-            f"⚡ <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
-            f"💹 <b>信号:</b> <code>{signal_text}</code>\n"
-            f"💰 <b>价格:</b> <code>{price}{change_str}</code>\n"
-            f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
-            f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
-            f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
-            f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
-        )
-
-        # 企业微信消息模板
-        wxcom_msg_text = (
-            f"💹 信号【{interval.upper()}】{symbol_link}\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
-            f"💸 信号: {signal_text}\n"
-            f"💰 价格: {price}{change_str}\n"
-            f"🧨 挤压: {res.get('bars', 0)} Bars\n"
-            f"📊 动能: {mom_icons if mom_icons else '无'}\n"
-            f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
-            f"📅 日期: {res.get('date', '-')}"
-        )
-
+        # telegram
         if tag == "telegram":
+            # url
+            symbol_link = f'<a href="{tv_url}">{tv_symbol}</a>'
+            # 消息模板
+            tg_msg_text = (
+                f"💹 <b>信号【{interval.upper()}】</b> <b>{symbol_link}</b>\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
+                f"💸 <b>信号:</b> <code>{signal_text}</code>\n"
+                f"💰 <b>价格:</b> <code>{price}{change_str}</code>\n"
+                f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
+                f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
+                f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
+                f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
+            )
             return tg_msg_text
-        elif tag == "wxcom":
-            return wxcom_msg_text
+
+        # wecom
+        elif tag == "wecom":
+            # url
+            symbol_link = f'[{tv_symbol}]({tv_url})'
+            # 消息模板
+            wecom_msg_text = (
+                f"💹 信号【{interval.upper()}】{symbol_link}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
+                f"💸 信号: {signal_text}\n"
+                f"💰 价格: {price}{change_str}\n"
+                f"🧨 挤压: {res.get('bars', 0)} Bars\n"
+                f"📊 动能: {mom_icons if mom_icons else '无'}\n"
+                f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
+                f"📅 日期: {res.get('date', '-')}"
+            )
+            return wecom_msg_text
         else:
             logger.error("没有对应的消息卡片，请检查")
             return None
@@ -559,13 +559,15 @@ class NotifyEngine:
     async def tg_broadcast_and_send(self, signal_results, interval, tag="telegram"):
         """
         合并信号并分段发送（每 10 个信号合并为一条消息）
-        —— 已内联 TG 发送逻辑
         """
         token = self.cfg.get('TG_TOKEN')
         chat_id = self.cfg.get('TG_CHAT_ID')
         url = f"https://api.telegram.org/bot{token}/sendMessage"
 
         chunk_size = 10
+
+        # 记录发送的消息条数
+        total_signals = len(signal_results)
 
         async with aiohttp.ClientSession() as session:
             for i in range(0, len(signal_results), chunk_size):
@@ -578,10 +580,7 @@ class NotifyEngine:
                     f"━━━━━━━━━━━━━━\n"
                 )
 
-                body_parts = [
-                    self.format_single_signal(res, interval, tag)
-                    for res in chunk
-                ]
+                body_parts = [ self.format_single_signal(res, interval, tag) for res in chunk ]
 
                 final_msg = header + "\n\n".join(body_parts)
 
@@ -596,57 +595,58 @@ class NotifyEngine:
                 try:
                     async with session.post(url, data=payload, timeout=10) as resp:
                         if resp.status != 200:
-                            logger.error(
-                                f"TG 发送失败 [{resp.status}]: {await resp.text()}"
-                            )
+                            logger.error( f"TG 发送失败 [{resp.status}]: {await resp.text()}")
                 except Exception as e:
                     logger.error(f"TG 网络异常: {e}")
 
                 await asyncio.sleep(0.5)
 
-    # 企业微信
-    async def wxcom_broadcast_and_send(self, signal_results, interval, tag="wxcom"):
+        logger.info(f"[{interval}] telegram通知发送完毕 | 总信号数: {total_signals}")
+
+    # wecom
+    async def wecom_broadcast_and_send(self, signal_results, interval, tag="wecom"):
         """
-        发送信号到企业微信群机器人
+        wecom 合并信号并分段发送（每 8 个信号合并为一条消息）
         """
         webhook_url = self.cfg.get('WECOM_WEBHOOK')
         if not webhook_url:
             return
 
+        chunk_size = 8  # wecom 4096 字节限制
+
+        # 记录发送的消息条数
+        total_signals = len(signal_results)
+
         async with aiohttp.ClientSession() as session:
-            # 企业微信建议每条消息不要太长，这里同样采用分段发送
-            chunk_size = 8
             for i in range(0, len(signal_results), chunk_size):
                 chunk = signal_results[i:i + chunk_size]
 
-                # 构建 Markdown 内容
-                header = f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
-                header += f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
-                header += f"━━━━━━━━━━━━━━\n"
+                header = (
+                    f"🚀 信号报告【{interval.upper()}】\n"
+                    f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
+                    f"━━━━━━━━━━━━━━\n"
+                )
 
                 body_parts = []
                 for res in chunk:
-                    body_parts.append(self.format_single_signal(res, interval, tag))
+                    text = self.format_single_signal(res, interval, tag)
+                    if text:
+                        body_parts.append(text.rstrip())  # 防止尾部空行
 
-                final_content = header + "\n" + "\n".join(body_parts)
+                final_content = header + "\n\n\n".join(body_parts)
 
-                # 企业微信机器人 API 格式
-                payload = {
-                    "msgtype": "markdown",
-                    "markdown": {
-                        "content": final_content
-                    }
-                }
+                payload = { "msgtype": "markdown",  "markdown": { "content": final_content } }
 
                 try:
                     async with session.post(webhook_url, json=payload, timeout=10) as resp:
                         if resp.status != 200:
-                            logger.error(f"WeCom 发送失败 [{resp.status}]: {await resp.text()}")
+                            logger.error(f"wecom 发送失败 [{resp.status}]: {await resp.text()}")
                 except Exception as e:
-                    logger.error(f"WeCom 网络异常: {e}")
+                    logger.error(f"wecom 网络异常: {e}")
 
                 await asyncio.sleep(0.5)
 
+        logger.info(f"[{interval}] wecom通知发送完毕 | 总信号数: {total_signals}")
 
 # =====================================================
 # 5. 定时引擎 (TimeEngine)
