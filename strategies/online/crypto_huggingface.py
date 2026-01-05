@@ -479,7 +479,7 @@ class NotifyEngine:
                 chunk = signal_results[i:i + chunk_size]
 
                 header = (
-                    f"🚀 <b>信号报告【{interval.upper()}】</b>\n"
+                    f"🚀 <b>时间周期【{interval.upper()}】</b>\n"
                     f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
                     f"━━━━━━━━━━━━━━\n"
                 )
