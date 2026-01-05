@@ -163,8 +163,7 @@ class DataEngine:
         else:
             return await self._fetch_okx_klines(session, symbol, interval)
 
-    async def _fetch_okx_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[
-        pd.DataFrame]:
+    async def _fetch_okx_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[pd.DataFrame]:
         """OKX 专用抓取逻辑"""
         url = f"{self.okx_base}/api/v5/market/candles"
         okx_interval = interval.upper()
