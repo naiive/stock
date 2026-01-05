@@ -11,7 +11,6 @@ import os
 from datetime import datetime, timedelta
 import time
 from typing import List, Dict, Optional, Any
-from aiohttp import web
 
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
@@ -697,14 +696,14 @@ class ScanEngine:
             await asyncio.gather(*workers)
 
 async def handle_health(request):
-    return web.Response(text="Bot is running", content_type='text/html')
+    return aiohttp.web.Response(text="Bot is running", content_type='text/html')
 
 async def main():
-    app = web.Application()
+    app = aiohttp.web.Application()
     app.router.add_get('/', handle_health)
-    runner = web.AppRunner(app)
+    runner = aiohttp.web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 7860)
+    site = aiohttp.web.TCPSite(runner, '0.0.0.0', 7860)
     await site.start()
     scanner = ScanEngine(CONFIG)
     await scanner.run()
