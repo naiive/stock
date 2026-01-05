@@ -26,7 +26,7 @@ CONFIG = {
         "active_exchange": "OKX",
         "OKX_BASE_URL": "https://www.okx.com",
         "BINANCE_BASE_URL": "https://fapi.binance.com",
-        "TOP_N": 50,
+        "TOP_N": 100,
         "MAX_CONCURRENT": 8,
         "KLINE_LIMIT": 1000,
         "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"]
