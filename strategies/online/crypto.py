@@ -147,7 +147,7 @@ class DataEngine:
             logger.error(f"💥 获取 OKX 活跃币种失败: {e}")
             return []
 
-    def _format_symbol(self, token: str) -> str:
+    def format_symbol(self, token: str) -> str:
         """统一转换币种格式"""
         clean_token = token.upper().replace("-USDT-SWAP", "").replace("USDT", "")
         if self.exchange == "OKX":
@@ -693,13 +693,12 @@ class ScanEngine:
             try:
                 start_time = time.time()
 
-                # --- 修改部分开始 ---
                 # 1. 获取配置的 watch_list
                 watch_list = self.cfg.get("watch_list", [])
 
                 if watch_list and len(watch_list) > 0:
                     # 如果有 watch_list，必须进行格式化转换
-                    symbols = [self.data_e._format_symbol(s) for s in watch_list]
+                    symbols = [self.data_e.format_symbol(s) for s in watch_list]
                 else:
                     # 如果没有 watch_list，自动获取成交额前N名（DataEngine内部已处理好格式）
                     symbols = await self.data_e.get_active_symbols(session)
@@ -740,8 +739,8 @@ class ScanEngine:
                 watch_list = self.cfg.get("watch_list", [])
 
                 if watch_list and len(watch_list) > 0:
-                    # --- 核心修改：对 watch_list 进行交易所格式转换 ---
-                    symbols = [self.data_e._format_symbol(s) for s in watch_list]
+                    # 如果有 watch_list，必须进行格式化转换
+                    symbols = [self.data_e.format_symbol(s) for s in watch_list]
                     logger.info(f"📋 使用配置列表 (已转换格式): {symbols}")
                 else:
                     # 自动获取（内部已经处理过格式了）
@@ -757,10 +756,6 @@ class ScanEngine:
             except Exception as e:
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
 
-            # -----------------------------------------------------
-            # 注意：这里的 interval_worker 内部也需要用到 symbols
-            # 建议在循环内动态获取最新的 symbols 或将上述 symbols 传入
-            # -----------------------------------------------------
             workers = [self.interval_worker(session, i) for i in self.cfg.get('intervals')]
             workers.append(self.heartbeat_worker())
             await asyncio.gather(*workers)
