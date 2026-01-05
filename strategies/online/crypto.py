@@ -661,13 +661,13 @@ class TimeEngine:
 
         # 1. 先确定延迟偏移量 (单位：秒)
         if unit == 'm':
-            offset_sec = 10
+            offset_sec = 3
         elif unit == 'h':
-            offset_sec = 120  # 2分钟
-        elif unit == 'd':
-            offset_sec = 300  # 5分钟
-        else:
             offset_sec = 5
+        elif unit == 'd':
+            offset_sec = 5
+        else:
+            offset_sec = 3
 
         # 2. 计算基础对齐时间点 (不带 offset 的整点)
         if unit == 'm':
