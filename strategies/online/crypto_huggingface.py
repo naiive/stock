@@ -5,6 +5,7 @@ import json
 import numpy as np
 import pandas as pd
 import asyncio
+from aiohttp import web
 import aiohttp
 import logging
 import os
@@ -696,14 +697,14 @@ class ScanEngine:
             await asyncio.gather(*workers)
 
 async def handle_health(request):
-    return aiohttp.web.Response(text="Bot is running", content_type='text/html')
+    return web.Response(text="Bot is running", content_type='text/html')
 
 async def main():
-    app = aiohttp.web.Application()
+    app = web.Application()
     app.router.add_get('/', handle_health)
-    runner = aiohttp.web.AppRunner(app)
+    runner = web.AppRunner(app)
     await runner.setup()
-    site = aiohttp.web.TCPSite(runner, '0.0.0.0', 7860)
+    site = web.TCPSite(runner, '0.0.0.0', 7860)
     await site.start()
     scanner = ScanEngine(CONFIG)
     await scanner.run()
