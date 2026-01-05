@@ -194,8 +194,7 @@ class DataEngine:
             logger.error(f"OKX Fetch Error ({symbol}): {e}")
             return None
 
-    async def _fetch_binance_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[
-        pd.DataFrame]:
+    async def _fetch_binance_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[pd.DataFrame]:
         """Binance 专用抓取逻辑"""
         url = f"{self.binance_base}/fapi/v1/klines"
         bn_interval = interval.lower()  # 币安通常使用小写 1h, 4h
