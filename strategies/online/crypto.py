@@ -9,21 +9,25 @@ import aiohttp
 import logging
 from datetime import datetime, timedelta
 import time
-from typing import List, Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from conf.config import TELEGRAM_CONFIG
 
 # =====================================================
 # 0. 配置中心 (CONFIG)
 # =====================================================
 CONFIG = {
-    # 留空则自动获取全市场高成交额品种
-    "watch_list": [],
+
+    # 留空则自动获取全市场高成交额品种，统一使用 Token 名称，程序会自动转换后缀
+    "watch_list": ["BTC", "ETH", "SOL", "DOGE"],
     # "watch_list": ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "DOGE-USDT-SWAP"],
     # 监听的时间周期
     "intervals": ["1H", "4H", "1D"],
 
     "api": {
-        "BASE_URL": "https://www.okx.com",
+        # 选项: "OKX" 或 "BINANCE"
+        "active_exchange": "OKX",
+        "OKX_BASE_URL": "https://www.okx.com",
+        "BINANCE_BASE_URL": "https://fapi.binance.com", # 币安合约接口
         "TOP_N": 50,            # 自动抓取成交额前50的品种
         "MAX_CONCURRENT": 8,    # 最大并发请求数
         "KLINE_LIMIT": 1000,    # K线数量
@@ -61,111 +65,161 @@ logger = logging.getLogger(__name__)
 # 1. 数据引擎 (DataEngine)
 # =====================================================
 class DataEngine:
-    def __init__(self, api_cfg: dict):
-        self.cfg = api_cfg
-        self.base_url = self.cfg.get('BASE_URL')
+    def __init__(self, cfg: dict):
+        self.cfg = cfg
+        self.exchange = cfg.get("active_exchange", "OKX").upper()
+        # 确保基础 URL 存在
+        self.okx_base = cfg.get('OKX_BASE_URL', "https://www.okx.com")
+        self.binance_base = cfg.get('BINANCE_BASE_URL', "https://fapi.binance.com")
 
     async def get_active_symbols(self, session: aiohttp.ClientSession) -> List[str]:
-        """获取 OKX 活跃币种 (按 USDT 成交额排序)"""
-        url = f"{self.base_url}/api/v5/market/tickers"
+        """公用入口：获取当前交易所成交额前 N 的品种"""
+        if self.exchange == "BINANCE":
+            return await self._get_binance_active_symbols(session)
+        else:
+            return await self._get_okx_active_symbols(session)
+
+    # =====================================================
+    # 币安 活跃币种获取逻辑
+    # =====================================================
+    async def _get_binance_active_symbols(self, session: aiohttp.ClientSession) -> List[str]:
+        url = f"{self.binance_base}/fapi/v1/ticker/24hr"
+        try:
+            async with session.get(url, timeout=10) as r:
+                data = await r.json()
+                if not isinstance(data, list):
+                    logger.error(f"❌ 币安 API 响应异常: {data}")
+                    return []
+
+                df = pd.DataFrame(data)
+                # quoteVolume 是 24h USDT 成交额
+                df['vol_usdt'] = pd.to_numeric(df['quoteVolume'], errors='coerce')
+
+                # 过滤：仅限 USDT 合约
+                df = df[df['symbol'].str.endswith('USDT')]
+
+                # 排除配置中的 Token
+                exclude = self.cfg['api'].get('EXCLUDE_TOKENS', [])
+                for token in exclude:
+                    df = df[~df['symbol'].str.contains(token)]
+
+                # 排序并取前 N
+                df = df.sort_values('vol_usdt', ascending=False)
+                top_n = self.cfg['api'].get('TOP_N', 50)
+                symbols = df.head(top_n)['symbol'].tolist()
+
+                logger.info(f"🔥 [Binance] 当前成交额前5: {symbols[:5]}")
+                return symbols
+        except Exception as e:
+            logger.error(f"💥 获取币安活跃币种失败: {e}")
+            return []
+
+    # =====================================================
+    # OKX 活跃币种获取逻辑
+    # =====================================================
+    async def _get_okx_active_symbols(self, session: aiohttp.ClientSession) -> List[str]:
+        url = f"{self.okx_base}/api/v5/market/tickers"
         params = {"instType": "SWAP"}
         try:
             async with session.get(url, params=params, timeout=10) as r:
                 res = await r.json()
                 data = res.get('data', [])
+                if not data: return []
 
-                if not data:
-                    logger.error("❌ 获取 Tickers 失败，数据为空")
-                    return []
-
-                # 1. 转为 DataFrame
                 df = pd.DataFrame(data)
-
-                # 2. 关键步骤：强制将 USDT 成交额字段转为浮点数
-                # volCcy24h 是以计价货币（USDT）为单位的成交额
+                # volCcy24h 是 OKX 的 24h USDT 成交额
                 df['vol_usdt'] = pd.to_numeric(df['volCcy24h'], errors='coerce')
-
-                # 3. 过滤：只保留 USDT 永续合约
                 df = df[df['instId'].str.endswith('-USDT-SWAP')]
 
-                # 4. 排除你配置中的特定币种
-                exclude_list = self.cfg.get('EXCLUDE_TOKENS', [])
-                for token in exclude_list:
+                exclude = self.cfg['api'].get('EXCLUDE_TOKENS', [])
+                for token in exclude:
                     df = df[~df['instId'].str.contains(token)]
 
-                # 5. 核心排序：按 USDT 成交额从大到小排列 (ascending=False)
                 df = df.sort_values('vol_usdt', ascending=False)
+                top_n = self.cfg['api'].get('TOP_N', 50)
+                symbols = df.head(top_n)['instId'].tolist()
 
-                # 打印前 5 名核实
-                top_5_check = df.head(5)[['instId', 'vol_usdt']].values.tolist()
-                logger.info(f"🔝 当前成交额前5名: {top_5_check}")
-
-                # 6. 提取前 N 个
-                top_n = self.cfg.get('TOP_N', 50)
-                top_symbols = df.head(top_n)['instId'].tolist()
-
-                # 7. 额外保险：确保 BTC/ETH 无论如何都在列表里
+                # 确保 BTC/ETH 在列表里
                 for core in ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]:
-                    if core in df['instId'].values and core not in top_symbols:
-                        top_symbols.insert(0, core)
+                    if core not in symbols: symbols.insert(0, core)
 
-                return top_symbols[:top_n]
-
+                logger.info(f"🔝 [OKX] 当前成交额前5: {symbols[:5]}")
+                return symbols[:top_n]
         except Exception as e:
-            logger.error(f"💥 按成交额排序获取币种失败: {e}")
+            logger.error(f"💥 获取 OKX 活跃币种失败: {e}")
             return []
 
+    def _format_symbol(self, token: str) -> str:
+        """统一转换币种格式"""
+        clean_token = token.upper().replace("-USDT-SWAP", "").replace("USDT", "")
+        if self.exchange == "OKX":
+            return f"{clean_token}-USDT-SWAP"
+        else:
+            return f"{clean_token}USDT"
+
     async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[pd.DataFrame]:
-        """抓取 OKX K线数据并自动处理参数格式"""
-        url = f"{self.base_url}/api/v5/market/candles"
+        """公用入口：根据配置路由到不同的私有抓取方法"""
+        if self.exchange == "BINANCE":
+            return await self._fetch_binance_klines(session, symbol, interval)
+        else:
+            return await self._fetch_okx_klines(session, symbol, interval)
 
-        # OKX 转换逻辑：将 "1h" 转换为 "1H", "1d" 转换为 "1D"
-        # 如果你传入的是 "1h"，OKX 必须接收 "1H"
-        okx_interval = interval.upper() if 'h' in interval or 'd' in interval else interval
-
+    async def _fetch_okx_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[
+        pd.DataFrame]:
+        """OKX 专用抓取逻辑"""
+        url = f"{self.okx_base}/api/v5/market/candles"
+        okx_interval = interval.upper()
         params = {
             "instId": symbol,
             "bar": okx_interval,
-            "limit": self.cfg.get('KLINE_LIMIT', 100)
+            "limit": self.cfg.get('KLINE_LIMIT', 1000)
         }
-
         try:
             async with session.get(url, params=params, timeout=10) as r:
-                if r.status != 200:
-                    err_msg = await r.text()
-                    logger.error(f"OKX API 响应异常: {r.status} - {err_msg}")
-                    return None
-
                 res = await r.json()
                 data = res.get('data', [])
+                if not data: return None
 
-                if not data:
-                    return None
-
-                # OKX 返回格式: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
-                # 0:时间戳, 1:开, 2:高, 3:低, 4:收, 5:交易量(张)
+                # OKX数据处理: 倒序转正序 -> 转换数值 -> 转换时间
                 df = pd.DataFrame(data, columns=['ts', 'o', 'h', 'l', 'c', 'v', 'volCcy', 'volCcyQuote', 'confirm'])
-
-                # 重要：OKX 数据是倒序的（最新在前），必须翻转回正序进行技术指标计算
                 df = df.iloc[::-1].reset_index(drop=True)
 
-                # 剔除未闭合的 K 线
-                # OKX 的 confirm='0' 表示正在走，'1' 表示已闭合
-                # 你原本的逻辑是 iloc[:-1]，在翻转后这依然有效
-                if len(df) > 0:
-                    df = df.iloc[:-1].copy()
+                # 剔除未闭合 K 线 (confirm='0' 为未完结)
+                df = df[df['confirm'] == '1'].copy()
 
-                # 转换数值
                 df = df[['ts', 'o', 'h', 'l', 'c', 'v']].astype(float)
                 df.columns = ['ts', 'open', 'high', 'low', 'close', 'volume']
-
-                # 时间转换为北京时间
                 df['date'] = pd.to_datetime(df['ts'], unit='ms') + timedelta(hours=8)
                 df.set_index('date', inplace=True)
                 return df
-
         except Exception as e:
-            logger.error(f"OKX 抓取K线数据失败 ({symbol}): {e}")
+            logger.error(f"OKX Fetch Error ({symbol}): {e}")
+            return None
+
+    async def _fetch_binance_klines(self, session: aiohttp.ClientSession, symbol: str, interval: str) -> Optional[
+        pd.DataFrame]:
+        """Binance 专用抓取逻辑"""
+        url = f"{self.binance_base}/fapi/v1/klines"
+        bn_interval = interval.lower()  # 币安通常使用小写 1h, 4h
+        params = {
+            "symbol": symbol,
+            "interval": bn_interval,
+            "limit": self.cfg.get('KLINE_LIMIT', 1000)
+        }
+        try:
+            async with session.get(url, params=params, timeout=10) as r:
+                data = await r.json()
+                if isinstance(data, dict) or not data: return None
+
+                # 币安数据处理: 已经是正序 -> 剔除最后一根未闭合 -> 转换数值
+                df = pd.DataFrame(data).iloc[:-1]
+                df = df[[0, 1, 2, 3, 4, 5]].astype(float)
+                df.columns = ['ts', 'open', 'high', 'low', 'close', 'volume']
+                df['date'] = pd.to_datetime(df['ts'], unit='ms') + timedelta(hours=8)
+                df.set_index('date', inplace=True)
+                return df
+        except Exception as e:
+            logger.error(f"Binance Fetch Error ({symbol}): {e}")
             return None
 
 
@@ -580,7 +634,7 @@ class ScanEngine:
         # 通知引擎
         self.notify_e = NotifyEngine(cfg['notify'])
         # 定时引擎
-        self.timer = TimeEngine()
+        self.timer_e = TimeEngine()
 
     async def _proc_symbol(self, session, symbol, interval, sem):
         """单个币种的处理流水线"""
@@ -625,43 +679,51 @@ class ScanEngine:
 
         while True:
             # 1. 计算距离“下一次”对齐点的时间
-            wait_sec = self.timer.get_wait_seconds(interval)
+            wait_sec = self.timer_e.get_wait_seconds(interval)
 
             # 2. 只有在需要等待时才休眠
             if wait_sec > 0:
-                # 计算目标时间用于日志展示
                 target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
                 logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
                 await asyncio.sleep(wait_sec)
 
-            # 3. 确定当前的时间槽（例如 11:00），防止重复扫描
-            # 如果 get_wait_seconds 逻辑正确，这里其实是双保险
             current_slot = datetime.now().replace(second=0, microsecond=0)
             if last_run_slot == current_slot:
-                # 如果当前分钟已经跑过了，强制休眠一小会儿避开这个槽位
                 await asyncio.sleep(1)
                 continue
 
             try:
                 start_time = time.time()
 
-                # 执行扫描逻辑
-                symbols = self.cfg.get("watch_list") or await self.data_e.get_active_symbols(session)
-                await self.scan_cycle(session, symbols, interval)
+                # --- 修改部分开始 ---
+                # 1. 获取配置的 watch_list
+                watch_list = self.cfg.get("watch_list", [])
 
-                # 确保 TG 消息发出
-                if self.notify_e.running_tasks:
-                    await asyncio.gather(*self.notify_e.running_tasks)
+                if watch_list and len(watch_list) > 0:
+                    # 如果有 watch_list，必须进行格式化转换
+                    symbols = [self.data_e._format_symbol(s) for s in watch_list]
+                else:
+                    # 如果没有 watch_list，自动获取成交额前N名（DataEngine内部已处理好格式）
+                    symbols = await self.data_e.get_active_symbols(session)
+                # --- 修改部分结束 ---
 
-                # 标记本次槽位已完成
-                last_run_slot = current_slot
+                if symbols:
+                    # 执行扫描逻辑
+                    await self.scan_cycle(session, symbols, interval)
 
-                duration = time.time() - start_time
-                logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
+                    # 确保 TG 消息发出
+                    if self.notify_e.running_tasks:
+                        await asyncio.gather(*self.notify_e.running_tasks)
+
+                    # 标记本次槽位已完成
+                    last_run_slot = current_slot
+                    duration = time.time() - start_time
+                    logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
+                else:
+                    logger.warning(f"⚠️ [{interval}] 未获取到可扫描的币种")
 
             except Exception as e:
-                logger.error(f"❌ [{interval}] 异常: {e}")
-                # 报错后不要立即重试，防止死循环轰炸 API
+                logger.error(f"❌ [{interval}] 异常: {e}", exc_info=True)
                 await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
 
     @staticmethod
@@ -676,23 +738,31 @@ class ScanEngine:
             try:
                 logger.info("⚡ 启动即时扫描调试开始...")
 
-                # 1. 明确检查 symbols
-                symbols = self.cfg.get("watch_list")
+                # 1. 获取并转换 symbols
+                watch_list = self.cfg.get("watch_list", [])
 
-                if not symbols or len(symbols) == 0:
+                if watch_list and len(watch_list) > 0:
+                    # --- 核心修改：对 watch_list 进行交易所格式转换 ---
+                    symbols = [self.data_e._format_symbol(s) for s in watch_list]
+                    logger.info(f"📋 使用配置列表 (已转换格式): {symbols}")
+                else:
+                    # 自动获取（内部已经处理过格式了）
                     symbols = await self.data_e.get_active_symbols(session)
 
                 # 2. 检查 symbols 是否有效
                 if symbols and len(symbols) > 0:
+                    # 执行首次即时扫描
                     await self.scan_cycle(session, symbols, "1H")
                 else:
                     logger.error("❌ 严重错误：最终 symbols 列表为空，无法扫描！")
 
             except Exception as e:
-                # 这里的 exc_info=True 会打印完整的报错位置（行号）
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
 
-            # 启动后续 Worker...
+            # -----------------------------------------------------
+            # 注意：这里的 interval_worker 内部也需要用到 symbols
+            # 建议在循环内动态获取最新的 symbols 或将上述 symbols 传入
+            # -----------------------------------------------------
             workers = [self.interval_worker(session, i) for i in self.cfg.get('intervals')]
             workers.append(self.heartbeat_worker())
             await asyncio.gather(*workers)
