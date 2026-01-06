@@ -18,18 +18,7 @@ import akshare as ak
 from tqdm import tqdm
 from sqlalchemy import create_engine, text
 
-# 假设您的配置文件存在
-try:
-    import conf.config as conf
-except ImportError:
-    # 兼容测试环境
-    class MockConf:
-        DB_CONFIG = {
-            "USER": "root", "PASS": "password", "HOST": "127.0.0.1", "PORT": 3306, "DB_NAME": "asian_quant"
-        }
-
-
-    conf = MockConf()
+import conf.config as conf
 
 # ---------------------------------------------------------
 # 0. 终端视觉常量 (ANSI 颜色)
