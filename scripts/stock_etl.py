@@ -208,7 +208,7 @@ def get_stock_list_with_cache():
     df = ak.stock_zh_a_spot_em()[['代码', '名称']].rename(columns={'代码': 'code', '名称': 'name'})
     df['code'] = df['code'].astype(str)
     with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump({"update_at": today, "data": df.to_dict(orient="records")}, f, ensure_ascii=False, indent=2)
+        json.dump({"time": today, "data": df.to_dict(orient="records")}, f, ensure_ascii=False, indent=2)
     return df
 
 
