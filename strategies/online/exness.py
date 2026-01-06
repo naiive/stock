@@ -16,7 +16,7 @@ from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG, EXNESS_CONDIG
 # 0. 配置中心 (CONFIG)
 # =====================================================
 CONFIG = {
-    "watch_list" : ["XAUUSDm"],
+    "watch_list" : ["XAUUSDm", "XALUSDm", "USOILm"],
 
     # 监听的时间周期
     "intervals": ["5M"],
@@ -24,8 +24,7 @@ CONFIG = {
     "api": {
         "BASE_URL": EXNESS_CONDIG.get("URL"),
         "AUTHORIZATION_TOKEN": EXNESS_CONDIG.get("AUTHORIZATION_TOKEN"),
-        "MAX_CONCURRENT": 1,    # 最大并发请求数
-        "KLINE_LIMIT": 1000,    # K线数量
+        "MAX_CONCURRENT": 2,    # 最大并发请求数
     },
 
     "strategy": {
@@ -66,9 +65,9 @@ class DataEngine:
         self.url = cfg.get('BASE_URL')
         self.authorization_token = cfg.get("AUTHORIZATION_TOKEN")
 
-    async def fetch_klines(self, session: aiohttp.ClientSession) -> Optional[pd.DataFrame]:
+    async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str) -> Optional[pd.DataFrame]:
         """exness 专用抓取逻辑"""
-        url = self.url
+        url = self.url + f"/{symbol}/candles"
         params = {
             "time_frame": "5",
             "from": "9007199254740991",
@@ -607,7 +606,7 @@ class ScanEngine:
         """单个币种的处理流水线"""
         async with sem:
             try:
-                raw = await self.data_e.fetch_klines(session)
+                raw = await self.data_e.fetch_klines(session, symbol)
 
                 if raw is None:
                     logger.error(f"❌ {symbol} 获取数据失败 (API返回空)")
@@ -695,8 +694,8 @@ class ScanEngine:
             try:
                 logger.info("⚡ 启动即时扫描调试开始...")
 
-                # 1. 获取并转换 symbols
-                symbols = self.cfg.get("watch_list", [])
+                # 1. 获取 symbols
+                symbols = self.cfg.get("watch_list")
 
                 # 2. 检查 symbols 是否有效
                 if symbols and len(symbols) > 0:
