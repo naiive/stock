@@ -18,18 +18,21 @@ import akshare as ak
 from tqdm import tqdm
 from sqlalchemy import create_engine, text
 
-import conf.config as conf
+# 配置文件存在
+try:
+    import conf.config as conf
+except ImportError:
+    # 兼容测试环境
+    class MockConf:
+        DB_CONFIG = {
+            "USER": "root", "PASS": "password", "HOST": "127.0.0.1", "PORT": 3306, "DB_NAME": "asian_quant"
+        }
+    conf = MockConf()
 
 # ---------------------------------------------------------
 # 0. 终端视觉常量 (ANSI 颜色)
 # ---------------------------------------------------------
-C_END = "\033[0m"
-C_BOLD = "\033[1m"
-C_RED = "\033[31m"
-C_GREEN = "\033[32m"
-C_YELLOW = "\033[33m"
-C_BLUE = "\033[34m"
-C_CYAN = "\033[36m"
+C_END, C_BOLD, C_RED, C_GREEN, C_YELLOW, C_BLUE, C_CYAN = "\033[0m", "\033[1m", "\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[36m"
 
 # ---------------------------------------------------------
 # 1. 全局配置字典 (字典展开排版，拒绝单行)
