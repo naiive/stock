@@ -55,7 +55,7 @@ class MySQLClient:
             pd.DataFrame: 包含 ['date', 'open', 'high', 'low', 'close', 'volume', 'amount'] 的 DataFrame。
         """
         # 1. 获取配置中的表名，若无则使用默认值
-        table_name = TABLE_CONFIG.get("QUERY_DAILY_TABLE", "a_stock_daily")
+        table_name = TABLE_CONFIG.get("QUERY_DAILY_TABLE")
 
         # 2. 计算日期搜索范围
         # 重要：因为股市有周末和节假日，自然日的 365 天只有约 240 个交易日。

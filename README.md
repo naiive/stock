@@ -87,7 +87,7 @@ stock/
 前置条件：
 
 - Python 3.11+
-- MySQL 8.0+（提供历史日线数据表，如 `a_stock_daily`）
+- MySQL 8.0+（提供历史日线数据表，如 `asian_quant_stock_daily`）
 
 安装建议（示例）：
 
@@ -187,8 +187,8 @@ DB_CONFIG = {
 }
 
 TABLE_CONFIG = {
-    "QUERY_DAILY_TABLE": "a_stock_daily",
-    "INSERT_DAILY_TABLE": "a_stock_daily"
+    "QUERY_DAILY_TABLE": "asian_quant_stock_daily",
+    "INSERT_DAILY_TABLE": "asian_quant_stock_daily"
 }
 ```
 
