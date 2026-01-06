@@ -16,7 +16,7 @@ from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG, EXNESS_CONDIG
 # 0. 配置中心 (CONFIG)
 # =====================================================
 CONFIG = {
-    "watch_list" : ["XAUUSDm", "XALUSDm", "USOILm"],
+    "watch_list" : ["XAUUSDm", "USOILm"],
 
     # 监听的时间周期
     "intervals": ["5M"],

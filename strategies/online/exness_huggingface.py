@@ -21,7 +21,7 @@ AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION_TOKEN")
 TZ = os.getenv("Asia/Shanghai")
 
 CONFIG = {
-    "watch_list" : ["XAUUSDm", "XALUSDm", "USOILm"],
+    "watch_list" : ["XAUUSDm"],
 
     # 监听的时间周期
     "intervals": ["5M"],
