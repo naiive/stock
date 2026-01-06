@@ -244,6 +244,7 @@ def fetch_stock_data(item, s_date, e_date):
 
     for attempt in range(1, CONFIG["MAX_RETRIES"] + 1):
         try:
+            # 支持历史加实时数据
             df = ak.stock_zh_a_hist(
                 symbol=code,
                 period=CONFIG['PERIOD'],
