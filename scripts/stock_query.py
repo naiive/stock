@@ -126,7 +126,7 @@ if __name__ == '__main__':
 
     # 第一次查询：Engine 被创建
     df_first = stock_zh_a_daily_mysql(
-        symbol='000001',
+        symbol='000002',
         start_date='20250101',
         end_date='20250131',
         adjust='qfq'
@@ -138,7 +138,7 @@ if __name__ == '__main__':
 
     # 第二次查询：复用已有的 Engine，从连接池中获取连接
     df_second = stock_zh_a_daily_mysql(
-        symbol='000001',
+        symbol='000002',
         start_date='20250101',
         end_date='20250131',
         adjust='qfq'
