@@ -441,15 +441,4 @@ def main():
     logger.info("=" * 60)
 
 if __name__ == "__main__":
-    # 今天有数据就执行 main，么有数就等有数据后在执行
-    # 一般16:00开始有数据
-    today = datetime.now().strftime("%Y%m%d")
-    if ak.stock_zh_a_daily(
-        symbol="sh600519",
-        start_date=today,
-        end_date=today,
-        adjust="qfq"
-    ).empty:
-        logger.warning(f"✅今天 {today}还没数据，等【ak.stock_zh_a_daily】接口有数据在执行！")
-    else:
-        main()
+    main()
