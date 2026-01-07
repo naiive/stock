@@ -720,7 +720,7 @@ class ScanEngine:
                 valid_results = [r for r in results if r is not None]
 
                 if len(opened_symbols) > 0 and len(valid_results) == 0:
-                    self.is_active = False  # 触发熔断开关
+                    self.is_active = False
                     error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
                                  f"原因：Token 已失效或 API 被暂时封禁。\n"
                                  f"结果：系统已自动熔断停机，不再请求接口。")
