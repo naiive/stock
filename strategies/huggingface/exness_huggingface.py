@@ -27,7 +27,7 @@ CONFIG = {
     "intervals": ["5M"],
 
     "api": {
-        "BASE_URL": EXNESS_BASE_URL,
+        "EXNESS_BASE_URL": EXNESS_BASE_URL,
         "AUTHORIZATION_TOKEN": AUTHORIZATION_TOKEN,
         "MAX_CONCURRENT": 2,
     },
@@ -70,7 +70,7 @@ logger = logging.getLogger(__name__)
 class DataEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.url = cfg.get('BASE_URL')
+        self.url = cfg.get('EXNESS_BASE_URL')
         self.authorization_token = cfg.get("AUTHORIZATION_TOKEN")
 
     async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str) -> Optional[pd.DataFrame]:
