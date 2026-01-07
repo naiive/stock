@@ -492,10 +492,10 @@ class NotifyEngine:
 
         if active_exchange == "BINANCE":
             # 币安合约 TradingView 格式通常是 BINANCE:ETHUSDT
-            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=BINANCE%3A{tv_symbol}"
+            tv_url = f"https://cn.tradingview.com/chart/?symbol=BINANCE%3A{tv_symbol}"
         else:
             # OKX TradingView 格式通常是 OKX:ETHUSDT.P
-            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
+            tv_url = f"https://cn.tradingview.com/chart/?symbol=OKX%3A{tv_symbol}.P"
 
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":

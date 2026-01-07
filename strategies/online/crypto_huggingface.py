@@ -404,9 +404,9 @@ class NotifyEngine:
         tv_symbol = symbol.replace("-SWAP", "").replace("-", "")
 
         if active_exchange == "BINANCE":
-            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=BINANCE%3A{tv_symbol}"
+            tv_url = f"https://cn.tradingview.com/chart/?symbol=BINANCE%3A{tv_symbol}"
         else:
-            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
+            tv_url = f"https://cn.tradingview.com/chart/?symbol=OKX%3A{tv_symbol}.P"
 
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":

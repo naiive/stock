@@ -309,14 +309,10 @@ class NotifyEngine:
 
     @staticmethod
     def format_single_signal(res, interval, tag):
-        symbol = res.get('symbol', 'Unknown')
-        active_exchange = CONFIG["api"].get("active_exchange")
-        tv_symbol = symbol.replace("-SWAP", "").replace("-", "")
 
-        if active_exchange == "BINANCE":
-            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=BINANCE%3A{tv_symbol}"
-        else:
-            tv_url = f"https://cn.tradingview.com/chart/pvCjwkIK/?symbol=OKX%3A{tv_symbol}.P"
+        symbol = res.get('symbol', 'Unknown')
+        tv_symbol = symbol[:-1]
+        tv_url = f"https://cn.tradingview.com/chart/?symbol=FX%3A{symbol}"
 
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":
