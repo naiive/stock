@@ -21,7 +21,7 @@ AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION_TOKEN")
 TZ = os.getenv("Asia/Shanghai")
 
 CONFIG = {
-    "watch_list" : ["XAUUSDm"],
+    "watch_list" : ["XAUUSDm", "TSLAm", "AAPLm", "NVDAm", "AMZNm"],
 
     # 监听的时间周期
     "intervals": ["5M"],
@@ -44,6 +44,13 @@ CONFIG = {
 
         "srb_left": 15,
         "srb_right": 15
+    },
+
+    "time": {
+        "market_groups": {
+            "forex_gold": ["XAU", "OIL", "USD", "EUR", "GBP"],
+            "us_stocks": ["TSLA", "AAPL", "NVDA", "MSFT", "AMZN", "META"]
+        }
     },
 
     "notify": {
@@ -275,8 +282,9 @@ class StrategyEngine:
         }
 
 class NotifyEngine:
-    def __init__(self, notify_cfg: dict):
+    def __init__(self, notify_cfg: dict, time_cfg: dict):
         self.cfg = notify_cfg
+        self.time_cfg = time_cfg
         self.running_tasks = []
 
     def process_results(self, results: list, interval: str):
@@ -307,12 +315,26 @@ class NotifyEngine:
             self.running_tasks.append(task)
             task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
-    @staticmethod
-    def format_single_signal(res, interval, tag):
-
+    def format_single_signal(self, res, interval, tag):
         symbol = res.get('symbol', 'Unknown')
-        tv_symbol = symbol[:-1]
-        tv_url = f"https://cn.tradingview.com/chart/?symbol=FX%3A{symbol}"
+        s_upper = symbol.upper()
+
+        tv_symbol = symbol[:-1] if s_upper.endswith('M') else symbol
+
+        groups = self.time_cfg.get("market_groups", {})
+
+        forex_list = groups.get("forex_gold", [])
+        stocks_list = groups.get("us_stocks", [])
+
+        if any(k in s_upper for k in stocks_list):
+            exchange = "NASDAQ"
+        elif any(k in s_upper for k in forex_list):
+            exchange = "FX"
+        else:
+            logger.error("没有配置对应的跳转链接")
+            exchange = ""
+
+        tv_url = f"https://cn.tradingview.com/chart/?symbol={exchange}%3A{tv_symbol}"
 
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":
@@ -365,7 +387,7 @@ class NotifyEngine:
             )
             return wecom_msg_text
         else:
-            logger.error("notify configuration error, please check")
+            logger.error("没有对应的消息卡片，请检查")
             return None
 
     async def tg_broadcast_and_send(self, signal_results, interval, tag="telegram"):
@@ -450,7 +472,81 @@ class NotifyEngine:
 
         logger.info(f"[{interval}] wecom通知发送完毕 | 总信号数: {total_signals}")
 
+    async def send_error_msg(self, error_text: str):
+        tasks = []
+        if self.cfg.get('WECOM_ENABLE'):
+            webhook_url = self.cfg.get('WECOM_WEBHOOK')
+            payload = {
+                "msgtype": "markdown",
+                "markdown": {
+                    "content": f"⚠️ **Exness系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+            }
+            tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_err")))
+
+        if self.cfg.get('TG_ENABLE'):
+            token = self.cfg.get('TG_TOKEN')
+            chat_id = self.cfg.get('TG_CHAT_ID')
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": f"⚠️ <b>Exness系统异常报警</b>\n\n详情: {error_text}",
+                "parse_mode": "HTML"
+            }
+            tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_err")))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    async def send_heartbeat(self):
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        msg = (
+            f"💓 **Exness机器人运行中**\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"状态: 系统心跳正常\n"
+            f"时间: {now_str}\n"
+            f"提示: 监控任务持续运行中..."
+        )
+
+        tasks = []
+
+        if self.cfg.get('WECOM_ENABLE'):
+            webhook_url = self.cfg.get('WECOM_WEBHOOK')
+            payload = {
+                "msgtype": "markdown",
+                "markdown": {"content": msg}
+            }
+            tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_hb")))
+
+        if self.cfg.get('TG_ENABLE'):
+            token = self.cfg.get('TG_TOKEN')
+            chat_id = self.cfg.get('TG_CHAT_ID')
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            tg_msg = msg.replace("**", "<b>").replace("**", "</b>")
+            payload = {
+                "chat_id": chat_id,
+                "text": tg_msg,
+                "parse_mode": "HTML"
+            }
+            tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_hb")))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+            logger.info("💓 已发送系统存活心跳通知")
+
+    @staticmethod
+    async def _post_request(url, payload, tag):
+        async with aiohttp.ClientSession() as session:
+            try:
+                if "msgtype" in payload:  # WeCom
+                    await session.post(url, json=payload, timeout=5)
+                else:  # Telegram
+                    await session.post(url, data=payload, timeout=5)
+            except Exception as e:
+                logger.error(f"发送报警失败 [{tag}]: {e}")
+
 class TimeEngine:
+    def __init__(self, time_cfg: dict):
+        self.cfg = time_cfg
 
     @staticmethod
     def get_wait_seconds(interval: str) -> float:
@@ -494,18 +590,60 @@ class TimeEngine:
 
         return wait_sec if wait_sec > 0 else 1.0
 
+    def is_symbol_market_open(self, symbol: str) -> bool:
+        s = symbol.upper()
+        now = datetime.now()
+        weekday = now.weekday()
+        hour = now.hour
+        minute = now.minute
+
+        is_dst = 3 <= now.month <= 11
+
+        groups = self.cfg.get("market_groups", {})
+        forex_keywords = groups.get("forex_gold", [])
+        stock_keywords = groups.get("us_stocks", [])
+
+        if any(k in s for k in forex_keywords):
+            close_h = 5 if is_dst else 6
+            open_h = 6 if is_dst else 7
+            if (weekday == 5 and hour >= close_h) or weekday == 6:
+                return False
+            if weekday == 0 and hour < open_h:
+                return False
+            return True
+
+        elif any(k in s for k in stock_keywords):
+            if weekday >= 5: return False
+
+            start_h, start_m = (21, 30) if is_dst else (22, 30)
+            end_h = 4 if is_dst else 5
+
+            curr_min = hour * 60 + minute
+            start_min = start_h * 60 + start_m
+            end_min = end_h * 60
+
+            if curr_min >= start_min or curr_min < end_min:
+                return True
+            return False
+
+        return True
+
 class ScanEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
+        self.is_active = True
         self.data_e = DataEngine(cfg['api'])
         self.ind_e = IndicatorEngine(cfg['strategy'])
         self.strat_e = StrategyEngine(cfg['strategy'])
-        self.notify_e = NotifyEngine(cfg['notify'])
-        self.timer_e = TimeEngine()
+        self.notify_e = NotifyEngine(cfg['notify'], cfg['time'])
+        self.timer_e = TimeEngine(cfg['time'])
 
     async def _proc_symbol(self, session, symbol, interval, sem):
         async with sem:
             try:
+                if not self.timer_e.is_symbol_market_open(symbol):
+                    return None
+
                 raw = await self.data_e.fetch_klines(session, symbol)
 
                 if raw is None:
@@ -536,14 +674,26 @@ class ScanEngine:
         logger.info(f"🟢 [{interval}] 周期监控任务已启动")
 
         last_run_slot = None
+        self.is_active = True
 
         while True:
-            wait_sec = self.timer_e.get_wait_seconds(interval)
+            if not self.is_active:
+                logger.critical(f"🛑 [{interval}] 系统已熔断停机。请检查 Token 有效性并手动重启脚本。")
+                break
 
+            wait_sec = self.timer_e.get_wait_seconds(interval)
             if wait_sec > 0:
-                target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
-                logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
+                if wait_sec > 10:
+                    target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
+                    logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
                 await asyncio.sleep(wait_sec)
+
+            symbols = self.cfg.get("watch_list", [])
+            opened_symbols = [s for s in symbols if self.timer_e.is_symbol_market_open(s)]
+
+            if not opened_symbols:
+                await asyncio.sleep(60)
+                continue
 
             current_slot = datetime.now().replace(second=0, microsecond=0)
             if last_run_slot == current_slot:
@@ -552,29 +702,63 @@ class ScanEngine:
 
             try:
                 start_time = time.time()
-
                 symbols = self.cfg.get("watch_list", [])
-                if symbols:
-                    await self.scan_cycle(session, symbols, interval)
 
-                    if self.notify_e.running_tasks:
-                        await asyncio.gather(*self.notify_e.running_tasks)
+                if not symbols:
+                    logger.warning(f"⚠️ [{interval}] 监控列表为空，跳过本次扫描")
+                    await asyncio.sleep(10)
+                    continue
 
-                    last_run_slot = current_slot
-                    duration = time.time() - start_time
-                    logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
-                else:
-                    logger.warning(f"⚠️ [{interval}] 未获取到可扫描的币种")
+                sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
+                tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
+
+                results = await asyncio.gather(*tasks)
+
+                opened_symbols = [s for s in symbols if self.timer_e.is_symbol_market_open(s)]
+
+                valid_results = [r for r in results if r is not None]
+
+                if len(opened_symbols) > 0 and len(valid_results) == 0:
+                    self.is_active = False  # 触发熔断开关
+                    error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
+                                 f"原因：Token 已失效或 API 被暂时封禁。\n"
+                                 f"结果：系统已自动熔断停机，不再请求接口。")
+
+                    logger.critical(error_msg)
+                    await self.notify_e.send_error_msg(error_msg)
+                    continue
+
+                self.notify_e.process_results(list(results), interval)
+
+                if self.notify_e.running_tasks:
+                    await asyncio.gather(*self.notify_e.running_tasks)
+
+                last_run_slot = current_slot
+                duration = time.time() - start_time
+                logger.info(
+                    f"✅ [{interval}] 扫描完成 (有效:{len(valid_results)}/{len(symbols)}), 耗时: {duration:.2f}s")
 
             except Exception as e:
-                logger.error(f"❌ [{interval}] 异常: {e}", exc_info=True)
-                await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
+                logger.error(f"❌ [{interval}] 运行过程中发生未预料异常: {e}", exc_info=True)
+                await asyncio.sleep(10)
 
-    @staticmethod
-    async def heartbeat_worker():
+    async def heartbeat_worker(self):
+        logger.info("💗 心跳监控协程已启动 (周期: 4小时)")
+
+        await self.notify_e.send_heartbeat()
+
         while True:
-            logger.info("💓 机器人运行中，系统心跳正常")
-            await asyncio.sleep(8 * 3600)
+            try:
+                await asyncio.sleep(4 * 3600)
+
+                if self.is_active:
+                    await self.notify_e.send_heartbeat()
+                else:
+                    logger.warning("💓 心跳跳过：系统目前处于熔断停机状态。")
+
+            except Exception as e:
+                logger.error(f"❌ 心跳协程异常: {e}")
+                await asyncio.sleep(60)
 
     async def run(self):
         async with aiohttp.ClientSession() as session:
@@ -593,7 +777,9 @@ class ScanEngine:
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
 
             workers = [self.interval_worker(session, i) for i in self.cfg.get('intervals')]
+
             workers.append(self.heartbeat_worker())
+
             await asyncio.gather(*workers)
 
 async def handle_health(request):

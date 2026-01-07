@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import json
-from dataclasses import replace
-
 import numpy as np
 import pandas as pd
 import asyncio
@@ -18,7 +16,7 @@ from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG, EXNESS_CONDIG
 # 0. 配置中心 (CONFIG)
 # =====================================================
 CONFIG = {
-    "watch_list" : ["XAUUSDm", "USOILm"],
+    "watch_list" : ["XAUUSDm", "TSLAm", "AAPLm", "NVDAm", "AMZNm"],
 
     # 监听的时间周期
     "intervals": ["5M"],
@@ -41,6 +39,14 @@ CONFIG = {
 
         "srb_left": 15,         # 支撑压力左侧
         "srb_right": 15         # 支撑压力右侧
+    },
+
+    "time": {
+        # 市场开盘逻辑分组
+        "market_groups": {
+            "forex_gold": ["XAU", "OIL", "USD", "EUR", "GBP"], # 黄金、原油、外汇
+            "us_stocks": ["TSLA", "AAPL", "NVDA", "MSFT", "AMZN", "META"] # 美股
+            }
     },
 
     "notify": {
@@ -100,7 +106,6 @@ class DataEngine:
         except Exception as e:
             logger.error(f"未获取到 enxesss 接口数据: {e}")
             return None
-
 
 
 # =====================================================
@@ -320,10 +325,12 @@ class StrategyEngine:
 # 4. 通知引擎 (NotifyEngine)
 # =====================================================
 class NotifyEngine:
-    def __init__(self, notify_cfg: dict):
+    def __init__(self, notify_cfg: dict, time_cfg: dict):
         self.cfg = notify_cfg
+        self.time_cfg = time_cfg
         self.running_tasks = []
 
+    # 主控流程
     def process_results(self, results: list, interval: str):
         """不同渠道消息通知：控制台、telegram、企微"""
         # 过滤 None
@@ -359,17 +366,35 @@ class NotifyEngine:
             task.add_done_callback(lambda t: self.running_tasks.remove(t) if t in self.running_tasks else None)
 
     # 共用消息卡片组装
-    @staticmethod
-    def format_single_signal(res, interval, tag):
+    def format_single_signal(self, res, interval, tag):
         """
         将单个信号格式化为字符串片段
         """
-        # 假设你在通知或主循环逻辑中获取了 symbol
         symbol = res.get('symbol', 'Unknown')
+        s_upper = symbol.upper()
 
-        tv_symbol = symbol[:-1]
+        # 1. 处理后缀：去掉 Exness 特有的 'm'
+        tv_symbol = symbol[:-1] if s_upper.endswith('M') else symbol
 
-        tv_url = f"https://cn.tradingview.com/chart/?symbol=FX%3A{symbol}"
+        # 2. 从配置中读取分组，动态判断交易所前缀
+        # 注意：这里假设 NotifyEngine 实例化时传入了包含 market_groups 的配置
+        groups = self.time_cfg.get("market_groups", {})
+
+        forex_list = groups.get("forex_gold", [])
+        stocks_list = groups.get("us_stocks", [])
+
+        # 逻辑判断：
+        if any(k in s_upper for k in stocks_list):
+            exchange = "NASDAQ"
+        elif any(k in s_upper for k in forex_list):
+            # 黄金和原油在 TV 上通常用 TVC 前缀更准确
+            exchange = "FX"
+        else:
+            logger.error("没有配置对应的跳转链接")
+            exchange = ""
+
+        # 组装跳转链接
+        tv_url = f"https://cn.tradingview.com/chart/?symbol={exchange}%3A{tv_symbol}"
 
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":
@@ -526,10 +551,93 @@ class NotifyEngine:
 
         logger.info(f"[{interval}] wecom通知发送完毕 | 总信号数: {total_signals}")
 
+    # 失效通知
+    async def send_error_msg(self, error_text: str):
+        """当接口失效或无数据时，根据配置发送报警"""
+        tasks = []
+        # 1. 发送到企业微信
+        if self.cfg.get('WECOM_ENABLE'):
+            webhook_url = self.cfg.get('WECOM_WEBHOOK')
+            payload = {
+                "msgtype": "markdown",
+                "markdown": {
+                    "content": f"⚠️ **Exness系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+            }
+            tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_err")))
+
+        # 2. 发送到 Telegram
+        if self.cfg.get('TG_ENABLE'):
+            token = self.cfg.get('TG_TOKEN')
+            chat_id = self.cfg.get('TG_CHAT_ID')
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": f"⚠️ <b>Exness系统异常报警</b>\n\n详情: {error_text}",
+                "parse_mode": "HTML"
+            }
+            tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_err")))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    # 心跳通知
+    async def send_heartbeat(self):
+        """发送系统心跳存活通知"""
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        msg = (
+            f"💓 **Exness机器人运行中**\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"状态: 系统心跳正常\n"
+            f"时间: {now_str}\n"
+            f"提示: 监控任务持续运行中..."
+        )
+
+        tasks = []
+        # 按照配置发送到对应渠道
+        if self.cfg.get('WECOM_ENABLE'):
+            webhook_url = self.cfg.get('WECOM_WEBHOOK')
+            payload = {
+                "msgtype": "markdown",
+                "markdown": {"content": msg}
+            }
+            tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_hb")))
+
+        if self.cfg.get('TG_ENABLE'):
+            token = self.cfg.get('TG_TOKEN')
+            chat_id = self.cfg.get('TG_CHAT_ID')
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            # TG 使用 HTML 格式
+            tg_msg = msg.replace("**", "<b>").replace("**", "</b>")
+            payload = {
+                "chat_id": chat_id,
+                "text": tg_msg,
+                "parse_mode": "HTML"
+            }
+            tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_hb")))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+            logger.info("💓 已发送系统存活心跳通知")
+
+    # 异步POST请求
+    @staticmethod
+    async def _post_request(url, payload, tag):
+        async with aiohttp.ClientSession() as session:
+            try:
+                if "msgtype" in payload:  # WeCom
+                    await session.post(url, json=payload, timeout=5)
+                else:  # Telegram
+                    await session.post(url, data=payload, timeout=5)
+            except Exception as e:
+                logger.error(f"发送报警失败 [{tag}]: {e}")
+
+
 # =====================================================
 # 5. 定时引擎 (TimeEngine)
 # =====================================================
 class TimeEngine:
+    def __init__(self, time_cfg: dict):
+        self.cfg = time_cfg
 
     @staticmethod
     def get_wait_seconds(interval: str) -> float:
@@ -578,12 +686,64 @@ class TimeEngine:
         # 如果当前就在延迟窗内（wait_sec 为负），则强制返回 1 秒后执行或跳到下一周期
         return wait_sec if wait_sec > 0 else 1.0
 
+    def is_symbol_market_open(self, symbol: str) -> bool:
+        """
+        根据配置判断品种是否开盘
+        :param symbol: 品种名 (如 XAUUSDm)
+        """
+        s = symbol.upper()
+        now = datetime.now()
+        weekday = now.weekday()
+        hour = now.hour
+        minute = now.minute
+
+        # 自动处理夏令时 (3月-11月)
+        is_dst = 3 <= now.month <= 11
+
+        # 获取分组配置
+        groups = self.cfg.get("market_groups", {})
+        forex_keywords = groups.get("forex_gold", [])
+        stock_keywords = groups.get("us_stocks", [])
+
+        # --- A. 匹配外汇/黄金逻辑 ---
+        if any(k in s for k in forex_keywords):
+            close_h = 5 if is_dst else 6
+            open_h = 6 if is_dst else 7
+            if (weekday == 5 and hour >= close_h) or weekday == 6:
+                return False  # 周六凌晨关盘后或周日
+            if weekday == 0 and hour < open_h:
+                return False  # 周一凌晨开盘前
+            return True
+
+        # --- B. 匹配美股逻辑 ---
+        elif any(k in s for k in stock_keywords):
+            if weekday >= 5: return False  # 周六周日不交易
+
+            # 转换北京时间开盘
+            start_h, start_m = (21, 30) if is_dst else (22, 30)
+            end_h = 4 if is_dst else 5
+
+            curr_min = hour * 60 + minute
+            start_min = start_h * 60 + start_m
+            end_min = end_h * 60
+
+            # 跨午夜逻辑：21:30以后 OR 凌晨4:00以前
+            if curr_min >= start_min or curr_min < end_min:
+                return True
+            return False
+
+        # --- C. 默认返回 True (防止遗漏品种) ---
+        return True
+
 
 # =====================================================
 # 5. 扫描引擎 (ScanEngine)
 # =====================================================
 class ScanEngine:
     def __init__(self, cfg: dict):
+        # 全局运行状态：True正常，False停机
+        self.is_active = True
+        # 全配置
         self.cfg = cfg
         # 数据引擎
         self.data_e = DataEngine(cfg['api'])
@@ -592,14 +752,19 @@ class ScanEngine:
         # 策略引擎
         self.strat_e = StrategyEngine(cfg['strategy'])
         # 通知引擎
-        self.notify_e = NotifyEngine(cfg['notify'])
+        self.notify_e = NotifyEngine(cfg['notify'], cfg['time'])
         # 定时引擎
-        self.timer_e = TimeEngine()
+        self.timer_e = TimeEngine(cfg['time'])
 
     async def _proc_symbol(self, session, symbol, interval, sem):
         """单个币种的处理流水线"""
         async with sem:
             try:
+                # 【改动点】：传入 time 节点进行开盘检查
+                if not self.timer_e.is_symbol_market_open(symbol):
+                    # 如果没开盘，直接安静地返回 None，不浪费 API 次数
+                    return None
+
                 raw = await self.data_e.fetch_klines(session, symbol)
 
                 if raw is None:
@@ -632,56 +797,142 @@ class ScanEngine:
         self.notify_e.process_results(results, interval)
 
     async def interval_worker(self, session, interval):
+        """
+        核心监控工作协程
+        :param session: aiohttp 客户端会话
+        :param interval: 监控周期，如 '5M', '1H'
+        """
         logger.info(f"🟢 [{interval}] 周期监控任务已启动")
 
-        # 记录上一次成功执行的“时间槽”，防止在同一个周期内重复触发
+        # 1. 状态位初始化
+        # last_run_slot: 记录上一次成功执行的时间点（分钟级），防止在同一分钟内重复触发
         last_run_slot = None
+        # is_active: 熔断开关。如果接口崩溃，设为 False 以停止后续所有请求
+        self.is_active = True
 
         while True:
-            # 1. 计算距离“下一次”对齐点的时间
-            wait_sec = self.timer_e.get_wait_seconds(interval)
+            # ==========================================
+            # 步骤 A: 熔断检查 (Circuit Breaker)
+            # ==========================================
+            if not self.is_active:
+                logger.critical(f"🛑 [{interval}] 系统已熔断停机。请检查 Token 有效性并手动重启脚本。")
+                # 发送停机通知后，退出协程循环，不再占用系统资源
+                break
 
-            # 2. 只有在需要等待时才休眠
+            # ==========================================
+            # 步骤 B: 精准定时等待 (Timer)
+            # ==========================================
+            # 计算距离下一个整点（如 05分, 10分）还剩多少秒
+            wait_sec = self.timer_e.get_wait_seconds(interval)
             if wait_sec > 0:
-                target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
-                logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
+                # 只在长等待时打印日志，避免日志刷屏
+                if wait_sec > 10:
+                    target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
+                    logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
+                # 无论长短，只要大于0就执行实际的等待
                 await asyncio.sleep(wait_sec)
 
+            # ==========================================
+            # 步骤 C: 市场开盘状态检查
+            # ==========================================
+            # 调用之前定义的 is_market_open()，非交易时段不请求接口
+            symbols = self.cfg.get("watch_list", [])
+            opened_symbols = [s for s in symbols if self.timer_e.is_symbol_market_open(s)]
+
+            if not opened_symbols:
+                # 如果当前没有任何一个品种在交易时段（比如周六、周日）
+                # 为了省电/省资源，我们每分钟检查一次，并跳过本次循环
+                await asyncio.sleep(60)
+                continue
+
+            # ==========================================
+            # 步骤 D: 重复触发保护
+            # ==========================================
+            # 确保在同一个 K 线周期内只执行一次扫描
             current_slot = datetime.now().replace(second=0, microsecond=0)
             if last_run_slot == current_slot:
                 await asyncio.sleep(1)
                 continue
 
+            # ==========================================
+            # 步骤 E: 执行核心扫描逻辑
+            # ==========================================
             try:
                 start_time = time.time()
-
-                # 1. 获取配置的 watch_list
                 symbols = self.cfg.get("watch_list", [])
-                if symbols:
-                    # 执行扫描逻辑
-                    await self.scan_cycle(session, symbols, interval)
 
-                    # 确保 TG 消息发出
-                    if self.notify_e.running_tasks:
-                        await asyncio.gather(*self.notify_e.running_tasks)
+                if not symbols:
+                    logger.warning(f"⚠️ [{interval}] 监控列表为空，跳过本次扫描")
+                    await asyncio.sleep(10)
+                    continue
 
-                    # 标记本次槽位已完成
-                    last_run_slot = current_slot
-                    duration = time.time() - start_time
-                    logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
-                else:
-                    logger.warning(f"⚠️ [{interval}] 未获取到可扫描的币种")
+                # 1. 并发扫描所有品种
+                # 使用信号量控制最大并发数，保护 API 不被封禁
+                sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
+                tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
+
+                # gather 会等待所有任务返回
+                results = await asyncio.gather(*tasks)
+
+                # 找出【当前应该处于开盘状态】的品种
+                opened_symbols = [s for s in symbols if self.timer_e.is_symbol_market_open(s)]
+
+                # 2. 接口可用性检测 (熔断逻辑核心)
+                # 过滤出成功获取到数据的品种
+                valid_results = [r for r in results if r is not None]
+
+                # 熔断判定：如果现在有品种该开盘，但我们一个有效结果都没拿到
+                if len(opened_symbols) > 0 and len(valid_results) == 0:
+                    self.is_active = False  # 触发熔断开关
+                    error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
+                                 f"原因：Token 已失效或 API 被暂时封禁。\n"
+                                 f"结果：系统已自动熔断停机，不再请求接口。")
+
+                    logger.critical(error_msg)
+                    # 发送报警到配置的通知渠道 (TG/WeCom)
+                    await self.notify_e.send_error_msg(error_msg)
+                    continue
+
+                # 3. 处理并发送信号通知
+                # 内部会根据策略结果判断是否需要推送消息
+                self.notify_e.process_results(list(results), interval)
+
+                # 4. 确保异步通知任务执行完毕
+                if self.notify_e.running_tasks:
+                    await asyncio.gather(*self.notify_e.running_tasks)
+
+                # 5. 标记扫描成功
+                last_run_slot = current_slot
+                duration = time.time() - start_time
+                logger.info(
+                    f"✅ [{interval}] 扫描完成 (有效:{len(valid_results)}/{len(symbols)}), 耗时: {duration:.2f}s")
 
             except Exception as e:
-                logger.error(f"❌ [{interval}] 异常: {e}", exc_info=True)
-                await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
+                # 捕获循环内的未知异常，防止单个周期报错导致整个脚本崩溃
+                logger.error(f"❌ [{interval}] 运行过程中发生未预料异常: {e}", exc_info=True)
+                await asyncio.sleep(10)  # 发生异常时等待 10 秒再试
 
-    @staticmethod
-    async def heartbeat_worker():
-        """独立的心跳协程"""
+    async def heartbeat_worker(self):
+        """独立的心跳协程：每4小时发送一次存活通知"""
+        logger.info("💗 心跳监控协程已启动 (周期: 4小时)")
+
+        # 启动时可以先发一条，确认机器人刚启动是好使的
+        await self.notify_e.send_heartbeat()
+
         while True:
-            logger.info("💓 机器人运行中，系统心跳正常")
-            await asyncio.sleep(8 * 3600)
+            try:
+                # 等待 4 小时 (4 * 3600 秒)
+                await asyncio.sleep(4 * 3600)
+
+                # 如果系统没有因为故障停机 (is_active 为 True)，则发送心跳
+                if self.is_active:
+                    await self.notify_e.send_heartbeat()
+                else:
+                    logger.warning("💓 心跳跳过：系统目前处于熔断停机状态。")
+
+            except Exception as e:
+                logger.error(f"❌ 心跳协程异常: {e}")
+                await asyncio.sleep(60)  # 异常后等待一分钟重试
 
     async def run(self):
         async with aiohttp.ClientSession() as session:
@@ -701,8 +952,13 @@ class ScanEngine:
             except Exception as e:
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
 
+            # 组装所有 worker
             workers = [self.interval_worker(session, i) for i in self.cfg.get('intervals')]
+
+            # 添加心跳 worker
             workers.append(self.heartbeat_worker())
+
+            # 并发运行
             await asyncio.gather(*workers)
 
 
