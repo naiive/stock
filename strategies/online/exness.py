@@ -19,7 +19,7 @@ CONFIG = {
     "watch_list" : ["XAUUSDm", "TSLAm", "AAPLm", "NVDAm", "AMZNm"],
 
     # 监听的时间周期
-    "intervals": ["5M"],
+    "intervals": ["1H"],
 
     "api": {
         "EXNESS_BASE_URL": EXNESS_CONDIG.get("URL"),
@@ -944,7 +944,7 @@ class ScanEngine:
                 # 2. 检查 symbols 是否有效
                 if symbols and len(symbols) > 0:
                     # 执行首次即时扫描
-                    await self.scan_cycle(session, symbols, "5M")
+                    await self.scan_cycle(session, symbols, "1H")
                 else:
                     logger.error("❌ 严重错误：最终 symbols 列表为空，无法扫描！")
 
