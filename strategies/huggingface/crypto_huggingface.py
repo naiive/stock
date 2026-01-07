@@ -16,7 +16,8 @@ from typing import List, Dict, Optional, Any
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK")
-TZ = os.getenv("Asia/Shanghai")
+# TZ -> Asia/Shanghai
+TZ = os.getenv("TZ")
 
 CONFIG = {
     "watch_list" : [],

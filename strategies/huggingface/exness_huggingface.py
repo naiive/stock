@@ -18,7 +18,8 @@ TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK")
 EXNESS_BASE_URL = os.getenv("EXNESS_BASE_URL")
 AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION_TOKEN")
-TZ = os.getenv("Asia/Shanghai")
+# TZ -> Asia/Shanghai
+TZ = os.getenv("TZ")
 
 CONFIG = {
     "watch_list" : ["XAUUSDm", "TSLAm", "AAPLm", "NVDAm", "AMZNm"],
