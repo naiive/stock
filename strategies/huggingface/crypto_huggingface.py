@@ -701,6 +701,7 @@ class ScanEngine:
 
     async def interval_worker(self, session, interval):
         logger.info(f"🟢 [{interval}] 周期监控任务已启动")
+
         last_run_slot = None
 
         while True:
@@ -730,7 +731,9 @@ class ScanEngine:
                     symbols = await self.data_e.get_active_symbols(session)
 
                 if not symbols:
-                    continue
+                    reason = "关键异常：无法获取活跃币种列表（接口返回为空）。"
+                    await self._trigger_circuit_breaker(interval, reason)
+                    continue  # 这里进入 continue 后，下一轮循环会在步骤 A 退出
 
                 sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
                 tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
@@ -739,11 +742,8 @@ class ScanEngine:
                 valid_results = [r for r in results if r is not None]
 
                 if len(symbols) > 0 and len(valid_results) == 0:
-                    self.is_active = False
-                    error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
-                                 f"原因：Token 已失效或 API 被暂时封禁。\n"
-                                 f"结果：系统已自动熔断停机，不再请求接口。")
-                    await self.notify_e.send_error_msg(error_msg)
+                    reason = "关键异常：所有币种详情请求均失败！Token 可能失效或 API 被封禁。"
+                    await self._trigger_circuit_breaker(interval, reason)
                     continue
 
                 self.notify_e.process_results(list(results), interval)
@@ -756,8 +756,8 @@ class ScanEngine:
                     f"✅ [{interval}] 扫描完成 (有效:{len(valid_results)}), 耗时: {time.time() - start_time:.2f}s")
 
             except Exception as e:
-                logger.error(f"❌ [{interval}] 异常: {e}", exc_info=True)
-                await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
+                logger.error(f"❌ [{interval}] 运行时异常: {e}", exc_info=True)
+                await asyncio.sleep(10)
 
     async def heartbeat_worker(self):
         logger.info("💗 心跳监控协程已启动 (周期: 4小时)")
@@ -777,6 +777,17 @@ class ScanEngine:
                 logger.error(f"❌ 心跳协程异常: {e}")
                 await asyncio.sleep(60)
 
+    async def _trigger_circuit_breaker(self, interval: str, reason: str):
+        self.is_active = False
+        error_msg = (
+            f"🛑 【系统熔断停机】\n"
+            f"触发周期: {interval}\n"
+            f"故障原因: {reason}\n"
+            f"结果: 扫描任务已终止，请检查网络或 API 配置。"
+        )
+        logger.critical(error_msg)
+        await self.notify_e.send_error_msg(error_msg)
+
     async def run(self):
         async with aiohttp.ClientSession() as session:
             try:
@@ -790,10 +801,13 @@ class ScanEngine:
                 else:
                     symbols = await self.data_e.get_active_symbols(session)
 
-                if symbols and len(symbols) > 0:
-                    await self.scan_cycle(session, symbols, "1H")
-                else:
-                    logger.error("❌ 严重错误：最终 symbols 列表为空，无法扫描！")
+                if not symbols or len(symbols) == 0:
+                    error_msg = "🚨 程序启动失败：最终 symbols 列表为空，无法执行初始扫描，监控任务已取消。"
+                    logger.critical(f"❌ {error_msg}")
+                    await self.notify_e.send_error_msg(error_msg)
+                    return
+
+                await self.scan_cycle(session, symbols, "1H")
 
             except Exception as e:
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)

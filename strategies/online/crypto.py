@@ -885,33 +885,36 @@ class ScanEngine:
                 start_time = time.time()
                 watch_list = self.cfg.get("watch_list", [])
 
-                # 转换或获取品种
+                # 1. 转换或获取活跃币种列表
                 if watch_list:
                     symbols = [self.data_e.format_symbol(s) for s in watch_list]
                 else:
                     symbols = await self.data_e.get_active_symbols(session)
 
+                # --- 判定 1：活跃列表没数据，立即停机 ---
                 if not symbols:
-                    continue
+                    reason = "关键异常：无法获取活跃币种列表（接口返回为空）。"
+                    await self._trigger_circuit_breaker(interval, reason)
+                    continue  # 这里进入 continue 后，下一轮循环会在步骤 A 退出
 
-                # 执行并发扫描
+                # 2. 执行并发扫描获取 K 线详情
                 sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
                 tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
                 results = await asyncio.gather(*tasks)
 
-                # --- 关键：失效判定 (币圈逻辑) ---
+                # --- 判定 2：币详情数据全部失败，立即停机 ---
                 valid_results = [r for r in results if r is not None]
 
                 # 如果配置了监控名单，但一个成功的返回都没有，判定为接口失效
                 if len(symbols) > 0 and len(valid_results) == 0:
-                    self.is_active = False
-                    error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
-                                 f"原因：Token 已失效或 API 被暂时封禁。\n"
-                                 f"结果：系统已自动熔断停机，不再请求接口。")
-                    await self.notify_e.send_error_msg(error_msg)
+                    reason = "关键异常：所有币种详情请求均失败！API 被封禁。"
+                    await self._trigger_circuit_breaker(interval, reason)
                     continue
 
-                # 正常处理结果
+                # ==========================================
+                # 成功逻辑: 处理结果并重置（如果有计数器的话）
+                # ==========================================
+                # 正常处理扫描结果
                 self.notify_e.process_results(list(results), interval)
 
                 # 确保异步任务完成
@@ -923,8 +926,11 @@ class ScanEngine:
                     f"✅ [{interval}] 扫描完成 (有效:{len(valid_results)}), 耗时: {time.time() - start_time:.2f}s")
 
             except Exception as e:
-                logger.error(f"❌ [{interval}] 异常: {e}", exc_info=True)
-                await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
+                # 运行时系统崩溃
+                logger.error(f"❌ [{interval}] 运行时异常: {e}", exc_info=True)
+                # 如果是网络相关的严重崩溃，也可以选择直接停机
+                # await self._trigger_circuit_breaker(interval, f"系统崩溃: {str(e)}")
+                await asyncio.sleep(10)
 
     async def heartbeat_worker(self):
         """独立的心跳协程：每4小时发送一次存活通知"""
@@ -948,6 +954,19 @@ class ScanEngine:
                 logger.error(f"❌ 心跳协程异常: {e}")
                 await asyncio.sleep(60)  # 异常后等待一分钟重试
 
+    async def _trigger_circuit_breaker(self, interval: str, reason: str):
+        """私有方法：触发系统熔断"""
+        self.is_active = False
+        error_msg = (
+            f"🛑 【系统熔断停机】\n"
+            f"触发周期: {interval}\n"
+            f"故障原因: {reason}\n"
+            f"结果: 扫描任务已终止，请检查网络或 API 配置。"
+        )
+        logger.critical(error_msg)
+        # 调用通知引擎发送紧急错误消息
+        await self.notify_e.send_error_msg(error_msg)
+
     async def run(self):
         async with aiohttp.ClientSession() as session:
             try:
@@ -964,12 +983,16 @@ class ScanEngine:
                     # 自动获取（内部已经处理过格式了）
                     symbols = await self.data_e.get_active_symbols(session)
 
-                # 2. 检查 symbols 是否有效
-                if symbols and len(symbols) > 0:
-                    # 执行首次即时扫描
-                    await self.scan_cycle(session, symbols, "1H")
-                else:
-                    logger.error("❌ 严重错误：最终 symbols 列表为空，无法扫描！")
+                # 2. 强校验：如果最终 symbols 列表为空，直接熔断并退出程序
+                if not symbols or len(symbols) == 0:
+                    error_msg = "🚨 程序启动失败：最终 symbols 列表为空，无法执行初始扫描，监控任务已取消。"
+                    logger.critical(f"❌ {error_msg}")
+                    # 直接触发熔断通知并返回，不再向下执行启动 worker
+                    await self.notify_e.send_error_msg(error_msg)
+                    return
+
+                # 3. 执行首次即时扫描（既然过了上面的校验，这里 symbols 一定有效）
+                await self.scan_cycle(session, symbols, "1H")
 
             except Exception as e:
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
