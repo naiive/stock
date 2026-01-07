@@ -330,7 +330,7 @@ async def start_engine(todo_jobs, total_query, already_exist):
 
     if failed_logs:
         logger.error(f"{C_BOLD}{' 失败明细 ':=^40}{C_END}")
-        for log in failed_logs[:10]:  # 仅展示前10个
+        for log in failed_logs:
             logger.error(f"代码: {log['code']} | 原因: {log['error']}")
 
     if success_dfs:
