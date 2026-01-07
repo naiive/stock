@@ -707,7 +707,7 @@ class ScanEngine:
 
         while True:
             if not self.is_active:
-                logger.critical(f"🛑 [{interval}] 系统已熔断停机。请检查 Token 有效性并手动重启脚本。")
+                logger.critical(f"🛑 [{interval}] 系统已熔断停机")
                 break
 
             wait_sec = self.timer_e.get_wait_seconds(interval)
@@ -732,7 +732,7 @@ class ScanEngine:
                     symbols = await self.data_e.get_active_symbols(session)
 
                 if not symbols:
-                    reason = "关键异常：无法获取活跃币种列表（接口返回为空）。"
+                    reason = "关键异常：无法获取活跃币种列表"
                     await self._trigger_circuit_breaker(interval, reason)
                     continue  # 这里进入 continue 后，下一轮循环会在步骤 A 退出
 
@@ -743,7 +743,7 @@ class ScanEngine:
                 valid_results = [r for r in results if r is not None]
 
                 if len(symbols) > 0 and len(valid_results) == 0:
-                    reason = "关键异常：所有币种详情请求均失败！Token 可能失效或 API 被封禁。"
+                    reason = "关键异常：所有币种详情请求均失败"
                     await self._trigger_circuit_breaker(interval, reason)
                     continue
 
@@ -784,7 +784,7 @@ class ScanEngine:
             f"🛑 【系统熔断停机】\n"
             f"触发周期: {interval}\n"
             f"故障原因: {reason}\n"
-            f"结果: 扫描任务已终止，请检查网络或 API 配置。"
+            f"结果: 扫描任务已终止"
         )
         logger.critical(error_msg)
         await self.notify_e.send_error_msg(error_msg)
@@ -792,7 +792,7 @@ class ScanEngine:
     async def run(self):
         async with aiohttp.ClientSession() as session:
             try:
-                logger.info("⚡ 启动即时扫描调试开始...")
+                logger.info("⚡ 启动即时扫描")
 
                 watch_list = self.cfg.get("watch_list", [])
 
@@ -803,7 +803,7 @@ class ScanEngine:
                     symbols = await self.data_e.get_active_symbols(session)
 
                 if not symbols or len(symbols) == 0:
-                    error_msg = "🚨 程序启动失败：最终 symbols 列表为空，无法执行初始扫描，监控任务已取消。"
+                    error_msg = "🚨 程序启动失败：请求数据为空，无法执行初始扫描"
                     logger.critical(f"❌ {error_msg}")
                     await self.notify_e.send_error_msg(error_msg)
                     return

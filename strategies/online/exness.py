@@ -884,9 +884,8 @@ class ScanEngine:
                 # 熔断判定：如果现在有品种该开盘，但我们一个有效结果都没拿到
                 if len(opened_symbols) > 0 and len(valid_results) == 0:
                     self.is_active = False  # 触发熔断开关
-                    error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
-                                 f"原因：Token 已失效或 API 被暂时封禁。\n"
-                                 f"结果：系统已自动熔断停机，不再请求接口。")
+                    error_msg = (f"🚨 [{interval}] 所有品种接口请求均失败 \n"
+                                 f"结果：系统已自动熔断停机")
 
                     logger.critical(error_msg)
                     # 发送报警到配置的通知渠道 (TG/WeCom)
@@ -937,7 +936,7 @@ class ScanEngine:
     async def run(self):
         async with aiohttp.ClientSession() as session:
             try:
-                logger.info("⚡ 启动即时扫描调试开始...")
+                logger.info("⚡ 启动即时扫描")
 
                 # 1. 获取 symbols
                 symbols = self.cfg.get("watch_list")

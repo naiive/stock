@@ -907,7 +907,7 @@ class ScanEngine:
 
                 # 如果配置了监控名单，但一个成功的返回都没有，判定为接口失效
                 if len(symbols) > 0 and len(valid_results) == 0:
-                    reason = "关键异常：所有币种详情请求均失败！API 被封禁。"
+                    reason = "关键异常：所有币种详情请求均失败"
                     await self._trigger_circuit_breaker(interval, reason)
                     continue
 
@@ -961,7 +961,7 @@ class ScanEngine:
             f"🛑 【系统熔断停机】\n"
             f"触发周期: {interval}\n"
             f"故障原因: {reason}\n"
-            f"结果: 扫描任务已终止，请检查网络或 API 配置。"
+            f"结果: 扫描任务已终止"
         )
         logger.critical(error_msg)
         # 调用通知引擎发送紧急错误消息
@@ -970,7 +970,7 @@ class ScanEngine:
     async def run(self):
         async with aiohttp.ClientSession() as session:
             try:
-                logger.info("⚡ 启动即时扫描调试开始...")
+                logger.info("⚡ 启动即时扫描")
 
                 # 1. 获取并转换 symbols
                 watch_list = self.cfg.get("watch_list", [])
@@ -985,7 +985,7 @@ class ScanEngine:
 
                 # 2. 强校验：如果最终 symbols 列表为空，直接熔断并退出程序
                 if not symbols or len(symbols) == 0:
-                    error_msg = "🚨 程序启动失败：最终 symbols 列表为空，无法执行初始扫描，监控任务已取消。"
+                    error_msg = "🚨 程序启动失败：请求数据为空，无法执行初始扫描"
                     logger.critical(f"❌ {error_msg}")
                     # 直接触发熔断通知并返回，不再向下执行启动 worker
                     await self.notify_e.send_error_msg(error_msg)

@@ -721,9 +721,8 @@ class ScanEngine:
 
                 if len(opened_symbols) > 0 and len(valid_results) == 0:
                     self.is_active = False
-                    error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
-                                 f"原因：Token 已失效或 API 被暂时封禁。\n"
-                                 f"结果：系统已自动熔断停机，不再请求接口。")
+                    error_msg = (f"🚨 [{interval}] 所有品种接口请求均失败 \n"
+                                 f"结果：系统已自动熔断停机")
 
                     logger.critical(error_msg)
                     await self.notify_e.send_error_msg(error_msg)
@@ -764,7 +763,7 @@ class ScanEngine:
     async def run(self):
         async with aiohttp.ClientSession() as session:
             try:
-                logger.info("⚡ 启动即时扫描调试开始...")
+                logger.info("⚡ 启动即时扫描")
 
                 symbols = self.cfg.get("watch_list")
 
