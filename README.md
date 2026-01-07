@@ -99,7 +99,7 @@ source /Users/xxx/Desktop/stock/venv311/bin/activate
 
 deactivate
 
-pip install pandas numpy sqlalchemy pymysql akshare aiohttp requests python-telegram-bot
+pip install pandas numpy sqlalchemy pymysql akshare aiohttp requests
 ```
 
 启动扫描：
