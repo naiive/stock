@@ -14,7 +14,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 script_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_path)
 os.environ.setdefault("TERM", "xterm-256color")
-MAX_WORKERS, PAGES_TO_CRAWL, BASE_SAVE_DIR = 3, [2], 'vid'
+MAX_WORKERS, PAGES_TO_CRAWL, BASE_SAVE_DIR = 5, [2], 'vid'
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
