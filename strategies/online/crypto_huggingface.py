@@ -544,6 +544,78 @@ class NotifyEngine:
 
         logger.info(f"[{interval}] wecom通知发送完毕 | 总信号数: {total_signals}")
 
+    async def send_error_msg(self, error_text: str):
+        tasks = []
+        if self.cfg.get('WECOM_ENABLE'):
+            webhook_url = self.cfg.get('WECOM_WEBHOOK')
+            payload = {
+                "msgtype": "markdown",
+                "markdown": {
+                    "content": f"⚠️ **Crypto系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+            }
+            tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_err")))
+
+        if self.cfg.get('TG_ENABLE'):
+            token = self.cfg.get('TG_TOKEN')
+            chat_id = self.cfg.get('TG_CHAT_ID')
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": f"⚠️ <b>Crypto系统异常报警</b>\n\n详情: {error_text}",
+                "parse_mode": "HTML"
+            }
+            tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_err")))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    async def send_heartbeat(self):
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        msg = (
+            f"💓 **Crypto机器人运行中**\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"状态: 系统心跳正常\n"
+            f"时间: {now_str}\n"
+            f"提示: 监控任务持续运行中..."
+        )
+
+        tasks = []
+        if self.cfg.get('WECOM_ENABLE'):
+            webhook_url = self.cfg.get('WECOM_WEBHOOK')
+            payload = {
+                "msgtype": "markdown",
+                "markdown": {"content": msg}
+            }
+            tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_hb")))
+
+        if self.cfg.get('TG_ENABLE'):
+            token = self.cfg.get('TG_TOKEN')
+            chat_id = self.cfg.get('TG_CHAT_ID')
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            # TG 使用 HTML 格式
+            tg_msg = msg.replace("**", "<b>").replace("**", "</b>")
+            payload = {
+                "chat_id": chat_id,
+                "text": tg_msg,
+                "parse_mode": "HTML"
+            }
+            tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_hb")))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+            logger.info("💓 已发送系统存活心跳通知")
+
+    @staticmethod
+    async def _post_request(url, payload, tag):
+        async with aiohttp.ClientSession() as session:
+            try:
+                if "msgtype" in payload:  # WeCom
+                    await session.post(url, json=payload, timeout=5)
+                else:  # Telegram
+                    await session.post(url, data=payload, timeout=5)
+            except Exception as e:
+                logger.error(f"发送报警失败 [{tag}]: {e}")
+
 class TimeEngine:
 
     @staticmethod
@@ -590,6 +662,7 @@ class TimeEngine:
 
 class ScanEngine:
     def __init__(self, cfg: dict):
+        self.is_active = True
         self.cfg = cfg
         self.data_e = DataEngine(cfg['api'])
         self.ind_e = IndicatorEngine(cfg['strategy'])
@@ -631,11 +704,15 @@ class ScanEngine:
         last_run_slot = None
 
         while True:
-            wait_sec = self.timer_e.get_wait_seconds(interval)
+            if not self.is_active:
+                logger.critical(f"🛑 [{interval}] 系统已熔断停机。请检查 Token 有效性并手动重启脚本。")
+                break
 
+            wait_sec = self.timer_e.get_wait_seconds(interval)
             if wait_sec > 0:
-                target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
-                logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
+                if wait_sec > 10:
+                    target_time = (datetime.now() + timedelta(seconds=wait_sec)).strftime('%H:%M:%S')
+                    logger.info(f"💤 [{interval}] 下次对齐点: {target_time} (等待 {int(wait_sec)}s)")
                 await asyncio.sleep(wait_sec)
 
             current_slot = datetime.now().replace(second=0, microsecond=0)
@@ -645,35 +722,60 @@ class ScanEngine:
 
             try:
                 start_time = time.time()
-
                 watch_list = self.cfg.get("watch_list", [])
 
-                if watch_list and len(watch_list) > 0:
+                if watch_list:
                     symbols = [self.data_e.format_symbol(s) for s in watch_list]
                 else:
                     symbols = await self.data_e.get_active_symbols(session)
 
-                if symbols:
-                    await self.scan_cycle(session, symbols, interval)
+                if not symbols:
+                    continue
 
-                    if self.notify_e.running_tasks:
-                        await asyncio.gather(*self.notify_e.running_tasks)
+                sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
+                tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
+                results = await asyncio.gather(*tasks)
 
-                    last_run_slot = current_slot
-                    duration = time.time() - start_time
-                    logger.info(f"✅ [{interval}] 扫描完成，耗时: {duration:.2f}s")
-                else:
-                    logger.warning(f"⚠️ [{interval}] 未获取到可扫描的币种")
+                valid_results = [r for r in results if r is not None]
+
+                if len(symbols) > 0 and len(valid_results) == 0:
+                    self.is_active = False
+                    error_msg = (f"🚨 [{interval}] 关键异常：所有品种接口请求均失败！\n"
+                                 f"原因：Token 已失效或 API 被暂时封禁。\n"
+                                 f"结果：系统已自动熔断停机，不再请求接口。")
+                    await self.notify_e.send_error_msg(error_msg)
+                    continue
+
+                self.notify_e.process_results(list(results), interval)
+
+                if self.notify_e.running_tasks:
+                    await asyncio.gather(*self.notify_e.running_tasks)
+
+                last_run_slot = current_slot
+                logger.info(
+                    f"✅ [{interval}] 扫描完成 (有效:{len(valid_results)}), 耗时: {time.time() - start_time:.2f}s")
 
             except Exception as e:
                 logger.error(f"❌ [{interval}] 异常: {e}", exc_info=True)
                 await asyncio.sleep(min(wait_sec, 30) if wait_sec > 0 else 10)
 
-    @staticmethod
-    async def heartbeat_worker():
+    async def heartbeat_worker(self):
+        logger.info("💗 心跳监控协程已启动 (周期: 4小时)")
+
+        await self.notify_e.send_heartbeat()
+
         while True:
-            logger.info("💓 机器人运行中，系统心跳正常")
-            await asyncio.sleep(8 * 3600)
+            try:
+                await asyncio.sleep(4 * 3600)
+
+                if self.is_active:
+                    await self.notify_e.send_heartbeat()
+                else:
+                    logger.warning("💓 心跳跳过：系统目前处于熔断停机状态。")
+
+            except Exception as e:
+                logger.error(f"❌ 心跳协程异常: {e}")
+                await asyncio.sleep(60)
 
     async def run(self):
         async with aiohttp.ClientSession() as session:
@@ -697,7 +799,9 @@ class ScanEngine:
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
 
             workers = [self.interval_worker(session, i) for i in self.cfg.get('intervals')]
+
             workers.append(self.heartbeat_worker())
+
             await asyncio.gather(*workers)
 
 async def handle_health(request):
