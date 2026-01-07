@@ -16,7 +16,7 @@ from typing import Dict, Optional, Any
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK")
-BASE_URL = os.getenv("BASE_URL")
+EXNESS_BASE_URL = os.getenv("EXNESS_BASE_URL")
 AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION_TOKEN")
 TZ = os.getenv("Asia/Shanghai")
 
@@ -27,7 +27,7 @@ CONFIG = {
     "intervals": ["5M"],
 
     "api": {
-        "BASE_URL": BASE_URL,
+        "BASE_URL": EXNESS_BASE_URL,
         "AUTHORIZATION_TOKEN": AUTHORIZATION_TOKEN,
         "MAX_CONCURRENT": 2,
     },
