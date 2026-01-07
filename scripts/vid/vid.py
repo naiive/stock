@@ -103,7 +103,6 @@ def producer(targets):
                             if img and 'data-src' in img.attrs:
                                 vm = re.search(r'/(\d+)/', img['data-src'])
                                 vid = vm.group(1) if vm else ""
-
                             if vid:
                                 with download_lock:
                                     if vid in downloaded_ids: continue
@@ -136,16 +135,13 @@ def consumer(idx):
                 spath = os.path.join(BASE_SAVE_DIR, f_n)
                 os.makedirs(spath, exist_ok=True)
                 fpath = os.path.join(spath, fn)
-
                 vh = HEADERS.copy()
                 vh['Referer'] = url
                 mp4_safe = safe_url(mp4)
-
                 with S.get(mp4_safe, headers=vh, stream=True, timeout=(5, 60), verify=False) as r:
                     r.raise_for_status()
                     total_size = int(r.headers.get('content-length', 0))
                     downloaded = 0
-
                     with open(fpath, 'wb') as f:
                         for chunk in r.iter_content(chunk_size=1024 * 1024):
                             if chunk:
@@ -156,10 +152,8 @@ def consumer(idx):
                                     status_str = f"D:{fn[-8:]}({pct}%)"
                                 else:
                                     status_str = f"D:{fn[-8:]}(DL...)"
-
                                 with download_lock:
                                     active_downloads[idx] = status_str
-
         except Exception as e:
             print(f"Thread-{idx} Error: {v_id} -> {e}")
             with download_lock:
@@ -196,7 +190,6 @@ def start_scrape():
         os.environ.setdefault("TERM", "xterm-256color")
         os.system('cls' if os.name == 'nt' else 'clear')
         load_local_history()
-
         available_cats = {}
         for k in sorted(ENCRYPTED_CATEGORIES.keys(), key=int):
             n, u = get_real_info(k)
@@ -216,7 +209,6 @@ def start_scrape():
             if not ts:
                 print("Invalid selection, exiting program")
                 return
-
         threading.Thread(target=producer, args=(ts,), daemon=True).start()
         threading.Thread(target=monitor_ui, daemon=True).start()
         threads = [threading.Thread(target=consumer, args=(i,), daemon=True) for i in range(MAX_WORKERS)]
