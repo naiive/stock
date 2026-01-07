@@ -198,7 +198,7 @@ def get_stock_list_with_cache():
         try:
             with open(CACHE_PATH, "r", encoding="utf-8") as f:
                 c = json.load(f)
-                if c.get("update_at") == today:
+                if c.get("time") == today:
                     logger.info(f"{C_GREEN}✅ 缓存命中:{C_END} 使用今日代码清单")
                     return pd.DataFrame(c['data'])
         except Exception:
