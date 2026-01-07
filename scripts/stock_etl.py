@@ -18,15 +18,22 @@ import akshare as ak
 from tqdm import tqdm
 from sqlalchemy import create_engine, text
 
-# 配置文件存在
+# ---------------------------------------------------------
+# 0. 配置文件加载与环境初始化
+# ---------------------------------------------------------
 try:
     import conf.config as conf
 except ImportError:
-    # 兼容测试环境
+    # 兼容测试环境，防止配置缺失导致崩溃
     class MockConf:
         DB_CONFIG = {
-            "USER": "root", "PASS": "password", "HOST": "127.0.0.1", "PORT": 3306, "DB_NAME": "asian_quant"
+            "USER": "root",
+            "PASS": "password",
+            "HOST": "127.0.0.1",
+            "PORT": 3306,
+            "DB_NAME": "asian_quant"
         }
+
     conf = MockConf()
 
 # ---------------------------------------------------------
@@ -35,25 +42,25 @@ except ImportError:
 C_END, C_BOLD, C_RED, C_GREEN, C_YELLOW, C_BLUE, C_CYAN = "\033[0m", "\033[1m", "\033[31m", "\033[32m", "\033[33m", "\033[34m", "\033[36m"
 
 # ---------------------------------------------------------
-# 1. 全局配置字典 (字典展开排版，拒绝单行)
+# 1. 全局配置字典 (工程化展开排版)
 # ---------------------------------------------------------
 CONFIG = {
     # 数据周期：daily(日线), weekly(周线), monthly(月线)
     "PERIOD": "daily",
 
-    # 【优先级最高】相对天数模式：0-今天, 1-昨天, 2-前天... 3-None-使用固定日期
+    # 【优先级最高】相对天数模式：0-今天, 1-昨天, 2-前天...
     "LOOKBACK_DAYS": 0,
 
-    # 固定日期模式 (当 LOOKBACK_DAYS 为 None 时生效) 格式：20260106
-    "START_DATE": "20260106",
-    "END_DATE": "20260106",
+    # 固定日期模式 (当 LOOKBACK_DAYS 为 None 时生效)
+    "START_DATE": "20260107",
+    "END_DATE": "20260107",
 
-    # 定向同步清单：若填入代码如 ["600519"]，则只同步这些，忽略过滤逻辑
+    # 定向同步清单：若填入代码，则只同步这些，忽略过滤逻辑
     "TARGET_STOCKS": [],
 
     # 并发与重试设置
-    "MAX_WORKERS": 8,  # 最大并发数
-    "MAX_RETRIES": 2,  # 单只股票失败后的重试次数
+    "MAX_WORKERS": 8,
+    "MAX_RETRIES": 2,
 
     # 数据库表映射关系
     "TABLE_MAP": {
@@ -66,10 +73,10 @@ CONFIG = {
     "ADJUST": "qfq",
 
     # 过滤器配置
-    "EXCLUDE_GEM": True,     # 创业板过滤
-    "EXCLUDE_KCB": True,     # 科创板过滤
-    "EXCLUDE_BJ": True,      # 北交所及新三板过滤
-    "EXCLUDE_ST": False,     # 排除 ST/*ST
+    "EXCLUDE_GEM": True,  # 创业板过滤
+    "EXCLUDE_KCB": True,  # 科创板过滤
+    "EXCLUDE_BJ": True,  # 北交所及新三板过滤
+    "EXCLUDE_ST": False,  # 排除 ST/*ST
     "EXCLUDE_DELIST": True,  # 排除退市股
 }
 
@@ -154,31 +161,23 @@ def get_engine():
 
 
 def apply_filters(df):
-    """
-    对股票列表进行板块和风险过滤
-    """
+    """对股票列表进行板块和风险过滤"""
     before_count = len(df)
 
-    # 1. 风险警示股过滤 (ST/*ST)
     if CONFIG.get("EXCLUDE_ST", True):
         df = df[~df['name'].str.contains(r'ST|\*ST', flags=re.IGNORECASE)]
 
-    # 2. 终止上市股过滤 (退市整理期)
     if CONFIG.get("EXCLUDE_DELIST", True):
         df = df[~df['name'].str.contains(r'退市|退')]
 
-    # 3. 非 A 股业务过滤 (B 股排除)
     df = df[~df['code'].str.startswith(('900', '200'))]
 
-    # 4. 创业板过滤
     if CONFIG.get("EXCLUDE_GEM", True):
         df = df[~df['code'].str.startswith(('300', '301'))]
 
-    # 5. 科创板过滤
     if CONFIG.get("EXCLUDE_KCB", True):
         df = df[~df['code'].str.startswith(('688', '689'))]
 
-    # 6. 北交所及新三板过滤
     if CONFIG.get("EXCLUDE_BJ", True):
         df = df[~df['code'].str.startswith(('4', '8', '92'))]
 
@@ -192,28 +191,42 @@ def apply_filters(df):
 
 
 def get_stock_list_with_cache():
-    """获取全市场股票清单"""
+    """获取全市场股票清单 (修复缓存键名与异常补全)"""
     today = datetime.now().strftime("%Y-%m-%d")
+
+    # 优先尝试读取本地缓存
     if os.path.exists(CACHE_PATH):
         try:
             with open(CACHE_PATH, "r", encoding="utf-8") as f:
                 c = json.load(f)
+                # 统一使用 time 键名
                 if c.get("time") == today:
                     logger.info(f"{C_GREEN}✅ 缓存命中:{C_END} 使用今日代码清单")
                     return pd.DataFrame(c['data'])
-        except Exception:
+                else:
+                    logger.info(f"{C_YELLOW}⚠️ 缓存过期:{C_END} 准备重新抓取")
+        except Exception as e:
+            logger.warning(f"{C_YELLOW}⚠️ 缓存解析失败:{C_END} {e}")
             pass
 
     logger.info("📡 接口更新: 抓取最新代码列表...")
-    df = ak.stock_zh_a_spot_em()[['代码', '名称']].rename(columns={'代码': 'code', '名称': 'name'})
-    df['code'] = df['code'].astype(str)
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump({"time": today, "data": df.to_dict(orient="records")}, f, ensure_ascii=False, indent=2)
-    return df
+    try:
+        df = ak.stock_zh_a_spot_em()[['代码', '名称']].rename(columns={'代码': 'code', '名称': 'name'})
+        df['code'] = df['code'].astype(str)
+        # 写入缓存，确保 time 键与读取逻辑一致
+        with open(CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump({
+                "time": today,
+                "data": df.to_dict(orient="records")
+            }, f, ensure_ascii=False, indent=2)
+        return df
+    except Exception as e:
+        logger.error(f"{C_RED}❌ 股票清单接口调用失败:{C_END} {e}")
+        return pd.DataFrame(columns=['code', 'name'])
 
 
 def get_downloaded_codes():
-    """检查数据库内已同步的代码"""
+    """检查数据库内已同步的代码 (更新模式下此函数虽不调用，但予以保留)"""
     table = CONFIG["TABLE_MAP"].get(CONFIG["PERIOD"])
     adj = CONFIG["ADJUST"] or 'none'
     sql = f"SELECT DISTINCT code FROM {table} WHERE date BETWEEN :s AND :e AND adjust = :adj"
@@ -231,12 +244,11 @@ def get_downloaded_codes():
 def fetch_stock_data(item, s_date, e_date):
     """抓取单只股票详情"""
     code = item['code']
-    time.sleep(random.uniform(0.3, 0.6))
+    time.sleep(random.uniform(0.1, 0.3))  # 同步模式稍微收敛频率
     last_err = "未知错误"
 
     for attempt in range(1, CONFIG["MAX_RETRIES"] + 1):
         try:
-            # 支持历史加实时数据
             df = ak.stock_zh_a_hist(
                 symbol=code,
                 period=CONFIG['PERIOD'],
@@ -277,7 +289,7 @@ def fetch_stock_data(item, s_date, e_date):
         except Exception as e:
             last_err = str(e)
             if attempt < CONFIG["MAX_RETRIES"]:
-                time.sleep(1.5)
+                time.sleep(1.0)
     return {"code": code, "df": None, "error": last_err}
 
 
@@ -286,6 +298,7 @@ def mysql_upsert_logic(table, conn, keys, data_iter):
     data_list = [dict(zip(keys, row)) for row in data_iter]
     cols = ", ".join([f"`{k}`" for k in keys])
     plh = ", ".join([f":{k}" for k in keys])
+    # 只要不是主键，全部更新
     upd = ", ".join([f"`{k}`=VALUES(`{k}`)" for k in keys if k not in ['date', 'code', 'adjust']])
     sql = f"INSERT INTO {table.name} ({cols}) VALUES ({plh}) ON DUPLICATE KEY UPDATE {upd}"
     conn.execute(text(sql), data_list)
@@ -295,6 +308,7 @@ def mysql_upsert_logic(table, conn, keys, data_iter):
 # 5. 核心引擎 (异步调度)
 # ---------------------------------------------------------
 async def start_engine(todo_jobs, total_query, already_exist):
+    """异步调度与进度管理"""
     sem = asyncio.Semaphore(CONFIG["MAX_WORKERS"])
     loop = asyncio.get_running_loop()
     success_dfs, failed_logs = [], []
@@ -305,6 +319,7 @@ async def start_engine(todo_jobs, total_query, already_exist):
                 return await loop.run_in_executor(pool, fetch_stock_data, item, CONFIG["START_DATE"],
                                                   CONFIG["END_DATE"])
 
+    # 更新模式下进度条展示
     pbar = tqdm(
         total=len(todo_jobs),
         desc=f"{C_BOLD}📊 同步进度{C_END}",
@@ -319,10 +334,10 @@ async def start_engine(todo_jobs, total_query, already_exist):
             success_dfs.append(res["df"])
         else:
             failed_logs.append(res)
+
         pbar.update(1)
         pbar.set_postfix({
             "🎯总需": total_query,
-            "📦已有": f"{C_CYAN}{already_exist}{C_END}",
             "✅成功": f"{C_GREEN}{len(success_dfs)}{C_END}",
             "❌失败": f"{C_RED}{len(failed_logs)}{C_END}"
         })
@@ -341,7 +356,7 @@ async def start_engine(todo_jobs, total_query, already_exist):
                 name=target, con=get_engine(), if_exists='append',
                 index=False, chunksize=2000, method=mysql_upsert_logic
             )
-            logger.info(f"{C_BOLD}{C_GREEN}✨ ETL 同步圆满完成！{C_END}")
+            logger.info(f"{C_BOLD}{C_GREEN}✨ ETL 同步与更新圆满完成！{C_END}")
         except Exception as e:
             logger.error(f"💔 入库崩溃: {e}")
 
@@ -350,23 +365,19 @@ async def start_engine(todo_jobs, total_query, already_exist):
 # 6. 主入口 (参数优先级与日期计算)
 # ---------------------------------------------------------
 def main():
+    """主逻辑入口"""
     start_ts = time.time()
     logger.info(f"{C_BOLD}{'=' * 75}{C_END}")
     logger.info(f"{C_BOLD}AsianQuant ETL 系统启动{C_END}")
 
     # --- 日期优先级处理逻辑 ---
-    # --- 日期优先级处理逻辑 (修正后的区间逻辑) ---
     lookback = CONFIG.get("LOOKBACK_DAYS")
     if lookback is not None:
         today_dt = datetime.now()
 
         if lookback == 0:
-            # 模式 0: 今天 -> 今天
-            start_dt = today_dt
-            end_dt = today_dt
+            start_dt = end_dt = today_dt
         else:
-            # 模式 N: (昨天 - N + 1) -> 昨天
-            # 例如 lookback = 3: (昨天-2天) 到 (昨天)
             yesterday_dt = today_dt - timedelta(days=1)
             start_dt = yesterday_dt - timedelta(days=int(lookback) - 1)
             end_dt = yesterday_dt
@@ -376,11 +387,9 @@ def main():
 
         mode_desc = f"{C_YELLOW}回溯区间模式 (N={lookback}){C_END} -> {C_RED}{CONFIG['START_DATE']} 至 {CONFIG['END_DATE']}{C_END}"
     elif CONFIG.get("START_DATE") and CONFIG.get("END_DATE"):
-        # 优先级2：固定日期模式
         mode_desc = f"{C_BLUE}固定日期模式{C_END} -> 范围: {C_RED}{CONFIG['START_DATE']} 至 {CONFIG['END_DATE']}{C_END}"
     else:
-        # 兜底：未配置报错
-        logger.error(f"{C_RED}致命错误: LOOKBACK_DAYS 和 START/END_DATE 均未配置！{C_END}")
+        logger.error(f"{C_RED}致命错误: 日期未配置！{C_END}")
         raise ValueError("Configuration Error: No date range specified.")
 
     logger.info(f"📅 当前运行模式: {mode_desc}")
@@ -395,21 +404,21 @@ def main():
             df_filtered = apply_filters(df_all)
             full_jobs = df_filtered.to_dict(orient="records")
 
-        # 2. 查漏补缺 (断点续传)
-        downloaded = get_downloaded_codes()
-        todo_jobs = [j for j in full_jobs if j['code'] not in downloaded]
-        already_exist = len(full_jobs) - len(todo_jobs)
+        # 2. 【核心逻辑调整】同步模式
+        # 不再根据 get_downloaded_codes 过滤，每次运行都执行接口请求并更新数据库
+        todo_jobs = full_jobs
+        already_exist = 0  # 全量模式下设为0，以便进度条显示一致
 
         logger.info(
-            f"📋 {C_BOLD}任务统计:{C_END} 总量={len(full_jobs)} | "
-            f"跳过已存在={already_exist} | 实际待同步={len(todo_jobs)}"
+            f"📋 {C_BOLD}任务统计:{C_END} 全量同步模式 | "
+            f"总任务量={len(todo_jobs)}支"
         )
 
-        # 3. 异步启动
+        # 3. 异步启动 (同步传递参数补全)
         if todo_jobs:
             asyncio.run(start_engine(todo_jobs, len(full_jobs), already_exist))
         else:
-            logger.info(f"{C_GREEN}✅ 目标时间段数据已完整，无需操作。{C_END}")
+            logger.info(f"{C_GREEN}✅ 目标清单为空，无需操作。{C_END}")
 
     except Exception as e:
         logger.critical(f"🛑 程序崩溃: {e}\n{traceback.format_exc()}")
