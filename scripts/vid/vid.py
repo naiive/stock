@@ -36,7 +36,8 @@ active_downloads, download_lock, total_found, total_done = ["Waiting"] * MAX_WOR
 def safe_filename(name):
     try:
         return re.sub(r'[\\/:*?"<>|\s]+', '_', name.strip())
-    except:
+    except Exception as e:
+        print(f"Regex match failed: {e}")
         return f"unknown_{int(time.time())}"
 
 def get_real_info(cid):
@@ -78,7 +79,7 @@ def load_local_history():
         for r, _, fs in os.walk(BASE_SAVE_DIR):
             for f in fs:
                 if f.endswith('.mp4'):
-                    fid = "".join(filter(str.isdigit, f))
+                    fid = "".join(filter(lambda x: x.isdigit(), f))
                     if fid: downloaded_ids.add(fid)
     except Exception as e:
         print(f"Load history failed: {e}")
@@ -108,7 +109,7 @@ def producer(targets):
                                     if vid in downloaded_ids: continue
                                     downloaded_ids.add(vid)
 
-                            task_queue.put((a['href'], f_n_safe, vid));
+                            task_queue.put((a['href'], f_n_safe, vid))
                             total_found += 1
                         except Exception as e:
                             print(f"Video item failed: {e}")
@@ -142,7 +143,7 @@ def consumer(idx):
                 fpath = os.path.join(spath, fn)
                 with download_lock:
                     active_downloads[idx] = f"D:{fn[-8:]}"
-                vh = HEADERS.copy();
+                vh = HEADERS.copy()
                 vh['Referer'] = url
                 mp4_safe = safe_url(mp4)
                 try:
@@ -169,13 +170,14 @@ def monitor_ui():
     try:
         pbar = tqdm(total=1, unit="vids", dynamic_ncols=True, colour='green')
         while True:
-            pbar.total = max(total_found, 1);
+            pbar.total = max(total_found, 1)
             pbar.n = total_done
             with download_lock:
                 status = " | ".join([f"T{i + 1}:{n}" for i, n in enumerate(active_downloads)])
-            pbar.set_description(f"📥 [{status}]");
+            pbar.set_description(f"📥 [{status}]")
             pbar.refresh()
-            if total_done >= total_found and total_found > 0 and task_queue.empty(): break
+            if total_done >= total_found > 0 and task_queue.empty():
+                break
             time.sleep(0.5)
         pbar.close()
     except Exception as e:
