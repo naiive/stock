@@ -14,7 +14,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 script_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_path)
 os.environ.setdefault("TERM", "xterm-256color")
-MAX_WORKERS, PAGES_TO_CRAWL, BASE_SAVE_DIR = 5, [2], 'vid'
+MAX_WORKERS, PAGES_TO_CRAWL, BASE_SAVE_DIR = 5, [1], 'vid'
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -134,30 +134,34 @@ def consumer(idx):
                 fn = f"{rm.group(1)}.mp4" if rm else f"{v_id}.mp4"
                 fn = safe_filename(fn)
                 spath = os.path.join(BASE_SAVE_DIR, f_n)
-                try:
-                    os.makedirs(spath, exist_ok=True)
-                except Exception as e:
-                    print(f"Create dir failed: {spath}, reason: {e}")
-                    task_queue.task_done()
-                    continue
+                os.makedirs(spath, exist_ok=True)
                 fpath = os.path.join(spath, fn)
-                with download_lock:
-                    active_downloads[idx] = f"D:{fn[-8:]}"
+
                 vh = HEADERS.copy()
                 vh['Referer'] = url
                 mp4_safe = safe_url(mp4)
-                try:
-                    with S.get(mp4_safe, headers=vh, stream=True, timeout=60, verify=False, allow_redirects=True) as r:
-                        r.raise_for_status()
-                        with open(fpath, 'wb') as f:
-                            for c in r.iter_content(chunk_size=1024 * 1024):
-                                if c: f.write(c)
-                except Exception as e:
-                    print(f"Download failed: {mp4_safe}, reason: {e}")
-                    with download_lock:
-                        if v_id in downloaded_ids: downloaded_ids.remove(v_id)
+
+                with S.get(mp4_safe, headers=vh, stream=True, timeout=(5, 60), verify=False) as r:
+                    r.raise_for_status()
+                    total_size = int(r.headers.get('content-length', 0))
+                    downloaded = 0
+
+                    with open(fpath, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=1024 * 1024):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total_size > 0:
+                                    pct = int(downloaded / total_size * 100)
+                                    status_str = f"D:{fn[-8:]}({pct}%)"
+                                else:
+                                    status_str = f"D:{fn[-8:]}(DL...)"
+
+                                with download_lock:
+                                    active_downloads[idx] = status_str
+
         except Exception as e:
-            print(f"Parse or request failed: {url}, reason: {e}")
+            print(f"Thread-{idx} Error: {v_id} -> {e}")
             with download_lock:
                 if v_id in downloaded_ids: downloaded_ids.remove(v_id)
         finally:
@@ -166,22 +170,26 @@ def consumer(idx):
                 active_downloads[idx] = "Idle"
             task_queue.task_done()
 
+
 def monitor_ui():
     try:
-        pbar = tqdm(total=1, unit="vids", dynamic_ncols=True, colour='green')
+        pbar = tqdm(total=100, unit="vids", dynamic_ncols=True, colour='green')
         while True:
-            pbar.total = max(total_found, 1)
+            curr_found = max(total_found, 1)
+            pbar.total = curr_found
             pbar.n = total_done
             with download_lock:
                 status = " | ".join([f"T{i + 1}:{n}" for i, n in enumerate(active_downloads)])
             pbar.set_description(f"📥 [{status}]")
             pbar.refresh()
             if total_done >= total_found > 0 and task_queue.empty():
+                pbar.n = total_found
+                pbar.refresh()
                 break
-            time.sleep(0.5)
+            time.sleep(0.3)
         pbar.close()
     except Exception as e:
-        print(f"UI monitor failed: {e}")
+        print(f"UI Error: {e}")
 
 def start_scrape():
     try:
