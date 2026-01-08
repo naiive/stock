@@ -576,11 +576,10 @@ class NotifyEngine:
     async def send_heartbeat(self):
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         msg = (
-            f"💓 **Crypto机器人运行中**\n"
+            f"💓 **Crypto机器人**\n"
             f"━━━━━━━━━━━━━━\n"
             f"状态: 系统心跳正常\n"
             f"时间: {now_str}\n"
-            f"提示: 监控任务持续运行中..."
         )
 
         tasks = []
