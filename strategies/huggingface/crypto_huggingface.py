@@ -497,9 +497,9 @@ class NotifyEngine:
                 chunk = signal_results[i:i + chunk_size]
 
                 header = (
-                    f"🚀 <b>【{interval.upper()}】周期信号报告</b>\n"
-                    f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
-                    f"━━━━━━━━━━━━━━\n"
+                    f"🟠 <b>币圈【{interval.upper()}】周期</b>\n"
+                    f"⏰ 扫描时间 {datetime.now().strftime('%H:%M:%S')}\n"
+                    f"━━━━━━━━━━━━━\n"
                 )
 
                 body_parts = [ self.format_single_signal(res, interval, tag) for res in chunk ]
@@ -539,9 +539,9 @@ class NotifyEngine:
                 chunk = signal_results[i:i + chunk_size]
 
                 header = (
-                    f"🚀【{interval.upper()}】周期信号报告\n"
-                    f"⏰ 扫描时间: {datetime.now().strftime('%H:%M:%S')}\n"
-                    f"━━━━━━━━━━━━━━\n"
+                    f"🟠 币圈【{interval.upper()}】周期\n"
+                    f"⏰ 扫描时间 {datetime.now().strftime('%H:%M:%S')}\n"
+                    f"━━━━━━━━━━━━━\n"
                 )
 
                 body_parts = []
