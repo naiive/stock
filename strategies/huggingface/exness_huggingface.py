@@ -16,21 +16,20 @@ from typing import Dict, Optional, Any
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_CHAT_ID = os.getenv("TG_CHAT_ID")
 WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK")
-EXNESS_BASE_URL = os.getenv("EXNESS_BASE_URL")
-AUTHORIZATION_TOKEN = os.getenv("AUTHORIZATION_TOKEN")
+API_KEY = os.getenv("API_KEY")
 # TZ -> Asia/Shanghai
 TZ = os.getenv("TZ")
 
 CONFIG = {
-    "watch_list" : ["XAUUSDm", "TSLAm", "AAPLm", "NVDAm", "AMZNm"],
+    "watch_list" : ["XAU/USD", "TSLA"],
 
-    # 监听的时间周期
-    "intervals": ["1H"],
+    "intervals": ["5M", "1H"],
 
     "api": {
-        "EXNESS_BASE_URL": EXNESS_BASE_URL,
-        "AUTHORIZATION_TOKEN": AUTHORIZATION_TOKEN,
-        "MAX_CONCURRENT": 2,
+        "TWELVE_DATA_KEY": API_KEY,
+        "MAX_CONCURRENT": 1,
+        "KLINE_LIMIT": 500,
+        "MIN_INTERVAL": 2
     },
 
     "strategy": {
@@ -69,43 +68,70 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class DataEngine:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, market_cfg: dict):
         self.cfg = cfg
-        self.url = cfg.get('EXNESS_BASE_URL')
-        self.authorization_token = cfg.get("AUTHORIZATION_TOKEN")
+        self.market_cfg = market_cfg
+        self.api_key = cfg.get('TWELVE_DATA_KEY')
 
-    async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str) -> Optional[pd.DataFrame]:
-        url = self.url + f"/{symbol}/candles"
+        self._request_lock = asyncio.Lock()
+        self._last_request_time = 0
+        self._min_interval = cfg.get('MIN_INTERVAL')
+        self._kline_limit = cfg.get('KLINE_LIMIT')
+
+    async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str, interval) -> Optional[pd.DataFrame]:
+        interval_lower = interval.lower()
+        if "m" in interval_lower and "min" not in interval_lower:
+            td_interval = interval_lower.replace("m", "min")
+        elif "h" in interval_lower:
+            td_interval = interval_lower
+        elif "d" in interval_lower:
+            td_interval = "1day"
+        else:
+            td_interval = interval_lower
+
+        url = "https://api.twelvedata.com/time_series"
         params = {
-            "time_frame": "5",
-            "from": "9007199254740991",
-            "count": "-300",
-            "price": "bid"
+            "symbol": symbol,
+            "interval": td_interval,
+            "outputsize": self._kline_limit,
+            "apikey": self.api_key,
+            "timezone": "Asia/Shanghai"
         }
-        headers = {
-            "authority": "rtapi-sl.eccweb.mobi",
-            "authorization": self.authorization_token,
-            "referer": "https://my.exness.com/",
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-            "accept": "application/json"
-        }
-        try:
-            async with session.get(url, params=params, headers=headers, timeout=10) as r:
-                res = await r.json()
-                data = res.get('price_history', [])
-                if not data:
-                    logger.error("未获取到 enxesss 接口数据，或许token失效")
-                    return None
-                df = pd.DataFrame(data)
-                df.columns = ['time', 'open', 'high', 'low', 'close', 'volume']
-                df['date'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
-                df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
-                df.set_index('date', inplace=True)
-                return df
 
-        except Exception as e:
-            logger.error(f"未获取到 enxesss 接口数据: {e}")
-            return None
+        async with self._request_lock:
+            now = time.time()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_interval:
+                await asyncio.sleep(self._min_interval - elapsed)
+
+            try:
+                async with session.get(url, params=params, timeout=15) as r:
+                    self._last_request_time = time.time()
+
+                    if r.status == 429:
+                        logger.error("🚨 Twelve Data 触发频率限制，请检查间隔设置")
+                        return None
+
+                    res = await r.json()
+                    if res.get("status") == "error":
+                        logger.error(f"❌ API报错: {res.get('message')}")
+                        return None
+
+                    values = res.get('values', [])
+                    if not values:
+                        return None
+
+                    df = pd.DataFrame(values)
+                    df['datetime'] = pd.to_datetime(df['datetime'])
+                    df.set_index('datetime', inplace=True)
+                    df.index.name = 'date'
+
+                    df = df[['open', 'high', 'low', 'close']].astype(float)
+                    return df.sort_index()
+
+            except Exception as e:
+                logger.error(f"💥 {symbol} 抓取异常: {e}")
+                return None
 
 class IndicatorEngine:
     def __init__(self, st_cfg: dict):
@@ -318,18 +344,17 @@ class NotifyEngine:
 
     def format_single_signal(self, res, interval, tag):
         symbol = res.get('symbol', 'Unknown')
-        s_upper = symbol.upper()
 
-        tv_symbol = symbol[:-1] if s_upper.endswith('M') else symbol
+        tv_symbol = symbol.upper().replace("/", "")
 
         groups = self.time_cfg.get("market_groups", {})
 
         forex_list = groups.get("forex_gold", [])
         stocks_list = groups.get("us_stocks", [])
 
-        if any(k in s_upper for k in stocks_list):
+        if any(k in tv_symbol for k in stocks_list):
             exchange = "NASDAQ"
-        elif any(k in s_upper for k in forex_list):
+        elif any(k in tv_symbol for k in forex_list):
             exchange = "FX"
         else:
             logger.error("没有配置对应的跳转链接")
@@ -480,7 +505,7 @@ class NotifyEngine:
             payload = {
                 "msgtype": "markdown",
                 "markdown": {
-                    "content": f"⚠️ **Exness系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+                    "content": f"⚠️ **Twelve系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
             }
             tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_err")))
 
@@ -490,7 +515,7 @@ class NotifyEngine:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             payload = {
                 "chat_id": chat_id,
-                "text": f"⚠️ <b>Exness系统异常报警</b>\n\n详情: {error_text}",
+                "text": f"⚠️ <b>Twelve系统异常报警</b>\n\n详情: {error_text}",
                 "parse_mode": "HTML"
             }
             tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_err")))
@@ -501,7 +526,7 @@ class NotifyEngine:
     async def send_heartbeat(self):
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         msg = (
-            f"💓 **Exness机器人运行中**\n"
+            f"💓 **Twelve机器人运行中**\n"
             f"━━━━━━━━━━━━━━\n"
             f"状态: 系统心跳正常\n"
             f"时间: {now_str}\n"
@@ -604,7 +629,7 @@ class TimeEngine:
         forex_keywords = groups.get("forex_gold", [])
         stock_keywords = groups.get("us_stocks", [])
 
-        if any(k in s for k in forex_keywords):
+        if any(k.upper() in s for k in forex_keywords):
             close_h = 5 if is_dst else 6
             open_h = 6 if is_dst else 7
             if (weekday == 5 and hour >= close_h) or weekday == 6:
@@ -613,7 +638,7 @@ class TimeEngine:
                 return False
             return True
 
-        elif any(k in s for k in stock_keywords):
+        elif any(k.upper() in s for k in stock_keywords):
             if weekday >= 5: return False
 
             start_h, start_m = (21, 30) if is_dst else (22, 30)
@@ -633,7 +658,7 @@ class ScanEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.is_active = True
-        self.data_e = DataEngine(cfg['api'])
+        self.data_e = DataEngine(cfg['api'], cfg['time'])
         self.ind_e = IndicatorEngine(cfg['strategy'])
         self.strat_e = StrategyEngine(cfg['strategy'])
         self.notify_e = NotifyEngine(cfg['notify'], cfg['time'])
@@ -645,7 +670,7 @@ class ScanEngine:
                 if not self.timer_e.is_symbol_market_open(symbol):
                     return None
 
-                raw = await self.data_e.fetch_klines(session, symbol)
+                raw = await self.data_e.fetch_klines(session, symbol, interval)
 
                 if raw is None:
                     logger.error(f"❌ {symbol} 获取数据失败 (API返回空)")
@@ -722,7 +747,7 @@ class ScanEngine:
                 if len(opened_symbols) > 0 and len(valid_results) == 0:
                     self.is_active = False
                     error_msg = (f"🚨 [{interval}] 所有品种接口请求均失败 \n"
-                                 f"结果：系统已自动熔断停机")
+                                 f"结果: 系统已自动熔断停机")
 
                     logger.critical(error_msg)
                     await self.notify_e.send_error_msg(error_msg)
@@ -754,7 +779,7 @@ class ScanEngine:
                 if self.is_active:
                     await self.notify_e.send_heartbeat()
                 else:
-                    logger.warning("💓 心跳跳过：系统目前处于熔断停机状态。")
+                    logger.warning("💓 心跳跳过: 系统目前处于熔断停机状态")
 
             except Exception as e:
                 logger.error(f"❌ 心跳协程异常: {e}")

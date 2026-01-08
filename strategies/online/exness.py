@@ -10,21 +10,22 @@ import logging
 from datetime import datetime, timedelta
 import time
 from typing import Dict, Optional, Any
-from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG, EXNESS_CONDIG
+from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG, TWELVE_DATA_CONFIG
 
 # =====================================================
 # 0. 配置中心 (CONFIG)
 # =====================================================
 CONFIG = {
-    "watch_list" : ["XAUUSDm", "TSLAm", "AAPLm", "NVDAm", "AMZNm"],
+    "watch_list" : ["XAU/USD", "TSLA"],
 
     # 监听的时间周期
-    "intervals": ["1H"],
+    "intervals": ["5M", "1H"],
 
     "api": {
-        "EXNESS_BASE_URL": EXNESS_CONDIG.get("URL"),
-        "AUTHORIZATION_TOKEN": EXNESS_CONDIG.get("AUTHORIZATION_TOKEN"),
-        "MAX_CONCURRENT": 2,    # 最大并发请求数
+        "TWELVE_DATA_KEY": TWELVE_DATA_CONFIG.get("API_KEY"), # Twelve Data API Key
+        "MAX_CONCURRENT": 1, # 免费版建议设为 1 最大进程数
+        "KLINE_LIMIT": 500,  # K线获取数量
+        "MIN_INTERVAL": 2    # 串行等待时间 2 秒
     },
 
     "strategy": {
@@ -68,44 +69,88 @@ logger = logging.getLogger(__name__)
 # 1. 数据引擎 (DataEngine)
 # =====================================================
 class DataEngine:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, market_cfg: dict):
+        """
+        cfg: CONFIG['api']
+        market_cfg: CONFIG['time'] (包含 market_groups)
+        """
         self.cfg = cfg
-        self.url = cfg.get('EXNESS_BASE_URL')
-        self.authorization_token = cfg.get("AUTHORIZATION_TOKEN")
+        self.market_cfg = market_cfg
+        self.api_key = cfg.get('TWELVE_DATA_KEY')
 
-    async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str) -> Optional[pd.DataFrame]:
-        """exness 专用抓取逻辑"""
-        url = self.url + f"/{symbol}/candles"
+        # 频率控制：Twelve Data 免费版 8次/分钟
+        self._request_lock = asyncio.Lock()
+        self._last_request_time = 0
+        self._min_interval = cfg.get('MIN_INTERVAL')
+        self._kline_limit = cfg.get('KLINE_LIMIT')
+
+    async def fetch_klines(self, session: aiohttp.ClientSession, symbol: str, interval) -> Optional[pd.DataFrame]:
+        """
+        通过 Twelve Data 获取 K 线数据
+        """
+        # 适配 Twelve Data 周期格式
+        interval_lower = interval.lower()
+
+        # 2. 严谨的周期转换映射
+        if "m" in interval_lower and "min" not in interval_lower:
+            # 处理 "5m" -> "5min", "15m" -> "15min"
+            td_interval = interval_lower.replace("m", "min")
+        elif "h" in interval_lower:
+            # Twelve Data 接受 "1h", "4h" 等格式，确保是小写即可
+            td_interval = interval_lower
+        elif "d" in interval_lower:
+            # 处理 "1d" 或 "1D" -> "1day"
+            td_interval = "1day"
+        else:
+            # 备用：如果没有匹配到，尝试原样输出或给个默认值
+            td_interval = interval_lower
+
+        url = "https://api.twelvedata.com/time_series"
         params = {
-            "time_frame": "5",
-            "from": "9007199254740991",
-            "count": "-300",
-            "price": "bid"
+            "symbol": symbol,
+            "interval": td_interval,
+            "outputsize": self._kline_limit,
+            "apikey": self.api_key,
+            "timezone": "Asia/Shanghai"
         }
-        headers = {
-            "authority": "rtapi-sl.eccweb.mobi",
-            "authorization": self.authorization_token,
-            "referer": "https://my.exness.com/",
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
-            "accept": "application/json"
-        }
-        try:
-            async with session.get(url, params=params, headers=headers, timeout=10) as r:
-                res = await r.json()
-                data = res.get('price_history', [])
-                if not data:
-                    logger.error("未获取到 enxesss 接口数据，或许token失效")
-                    return None
-                df = pd.DataFrame(data)
-                df.columns = ['time', 'open', 'high', 'low', 'close', 'volume']
-                df['date'] = pd.to_datetime(df['time'], unit='ms') + pd.Timedelta(hours=8)
-                df = df[['date', 'open', 'high', 'low', 'close', 'volume']]
-                df.set_index('date', inplace=True)
-                return df
 
-        except Exception as e:
-            logger.error(f"未获取到 enxesss 接口数据: {e}")
-            return None
+        # 频率保护：使用 Lock 确保 ScanEngine 并发抓取时自动排队
+        async with self._request_lock:
+            now = time.time()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_interval:
+                await asyncio.sleep(self._min_interval - elapsed)
+
+            try:
+                async with session.get(url, params=params, timeout=15) as r:
+                    self._last_request_time = time.time()
+
+                    if r.status == 429:
+                        logger.error("🚨 Twelve Data 触发频率限制，请检查间隔设置")
+                        return None
+
+                    res = await r.json()
+                    if res.get("status") == "error":
+                        logger.error(f"❌ API报错: {res.get('message')}")
+                        return None
+
+                    values = res.get('values', [])
+                    if not values:
+                        return None
+
+                    # 转换为标准 DataFrame
+                    df = pd.DataFrame(values)
+                    df['datetime'] = pd.to_datetime(df['datetime'])
+                    df.set_index('datetime', inplace=True)
+                    df.index.name = 'date'
+
+                    # 整理列并重排时间（Twelve Data 默认返回最新在前的逆序，需反转）
+                    df = df[['open', 'high', 'low', 'close']].astype(float)
+                    return df.sort_index()
+
+            except Exception as e:
+                logger.error(f"💥 {symbol} 抓取异常: {e}")
+                return None
 
 
 # =====================================================
@@ -371,10 +416,8 @@ class NotifyEngine:
         将单个信号格式化为字符串片段
         """
         symbol = res.get('symbol', 'Unknown')
-        s_upper = symbol.upper()
 
-        # 1. 处理后缀：去掉 Exness 特有的 'm'
-        tv_symbol = symbol[:-1] if s_upper.endswith('M') else symbol
+        tv_symbol = symbol.upper().replace("/", "")
 
         # 2. 从配置中读取分组，动态判断交易所前缀
         # 注意：这里假设 NotifyEngine 实例化时传入了包含 market_groups 的配置
@@ -384,9 +427,9 @@ class NotifyEngine:
         stocks_list = groups.get("us_stocks", [])
 
         # 逻辑判断：
-        if any(k in s_upper for k in stocks_list):
+        if any(k in tv_symbol for k in stocks_list):
             exchange = "NASDAQ"
-        elif any(k in s_upper for k in forex_list):
+        elif any(k in tv_symbol for k in forex_list):
             # 黄金和原油在 TV 上通常用 TVC 前缀更准确
             exchange = "FX"
         else:
@@ -561,7 +604,7 @@ class NotifyEngine:
             payload = {
                 "msgtype": "markdown",
                 "markdown": {
-                    "content": f"⚠️ **Exness系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+                    "content": f"⚠️ **Twelve系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
             }
             tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_err")))
 
@@ -572,7 +615,7 @@ class NotifyEngine:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             payload = {
                 "chat_id": chat_id,
-                "text": f"⚠️ <b>Exness系统异常报警</b>\n\n详情: {error_text}",
+                "text": f"⚠️ <b>Twelve系统异常报警</b>\n\n详情: {error_text}",
                 "parse_mode": "HTML"
             }
             tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_err")))
@@ -585,7 +628,7 @@ class NotifyEngine:
         """发送系统心跳存活通知"""
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         msg = (
-            f"💓 **Exness机器人运行中**\n"
+            f"💓 **Twelve机器人运行中**\n"
             f"━━━━━━━━━━━━━━\n"
             f"状态: 系统心跳正常\n"
             f"时间: {now_str}\n"
@@ -706,7 +749,7 @@ class TimeEngine:
         stock_keywords = groups.get("us_stocks", [])
 
         # --- A. 匹配外汇/黄金逻辑 ---
-        if any(k in s for k in forex_keywords):
+        if any(k.upper() in s for k in forex_keywords):
             close_h = 5 if is_dst else 6
             open_h = 6 if is_dst else 7
             if (weekday == 5 and hour >= close_h) or weekday == 6:
@@ -716,7 +759,7 @@ class TimeEngine:
             return True
 
         # --- B. 匹配美股逻辑 ---
-        elif any(k in s for k in stock_keywords):
+        elif any(k.upper() in s for k in stock_keywords):
             if weekday >= 5: return False  # 周六周日不交易
 
             # 转换北京时间开盘
@@ -746,7 +789,7 @@ class ScanEngine:
         # 全配置
         self.cfg = cfg
         # 数据引擎
-        self.data_e = DataEngine(cfg['api'])
+        self.data_e = DataEngine(cfg['api'], cfg['time'])
         # 指标引擎
         self.ind_e = IndicatorEngine(cfg['strategy'])
         # 策略引擎
@@ -765,7 +808,7 @@ class ScanEngine:
                     # 如果没开盘，直接安静地返回 None，不浪费 API 次数
                     return None
 
-                raw = await self.data_e.fetch_klines(session, symbol)
+                raw = await self.data_e.fetch_klines(session, symbol, interval)
 
                 if raw is None:
                     logger.error(f"❌ {symbol} 获取数据失败 (API返回空)")
@@ -885,7 +928,7 @@ class ScanEngine:
                 if len(opened_symbols) > 0 and len(valid_results) == 0:
                     self.is_active = False  # 触发熔断开关
                     error_msg = (f"🚨 [{interval}] 所有品种接口请求均失败 \n"
-                                 f"结果：系统已自动熔断停机")
+                                 f"结果: 系统已自动熔断停机")
 
                     logger.critical(error_msg)
                     # 发送报警到配置的通知渠道 (TG/WeCom)
@@ -927,7 +970,7 @@ class ScanEngine:
                 if self.is_active:
                     await self.notify_e.send_heartbeat()
                 else:
-                    logger.warning("💓 心跳跳过：系统目前处于熔断停机状态。")
+                    logger.warning("💓 心跳跳过: 系统目前处于熔断停机状态")
 
             except Exception as e:
                 logger.error(f"❌ 心跳协程异常: {e}")
@@ -944,9 +987,9 @@ class ScanEngine:
                 # 2. 检查 symbols 是否有效
                 if symbols and len(symbols) > 0:
                     # 执行首次即时扫描
-                    await self.scan_cycle(session, symbols, "1H")
+                    await self.scan_cycle(session, symbols, "5M")
                 else:
-                    logger.error("❌ 严重错误：最终 symbols 列表为空，无法扫描！")
+                    logger.error("❌ 严重错误: 最终 symbols 列表为空，无法扫描！")
 
             except Exception as e:
                 logger.error(f"❌ 初始扫描发生崩溃: {e}", exc_info=True)
