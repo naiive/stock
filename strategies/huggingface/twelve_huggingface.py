@@ -12,13 +12,17 @@ import logging
 from datetime import datetime, timedelta
 import time
 from typing import Dict, Optional, Any
+from cryptography.fernet import Fernet
 
-TG_TOKEN = os.getenv("TG_TOKEN")
-TG_CHAT_ID = os.getenv("TG_CHAT_ID")
-WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK")
-API_KEY = os.getenv("API_KEY")
-# TZ -> Asia/Shanghai
-TZ = os.getenv("TZ")
+TZ = os.getenv("TZ") # TZ -> Asia/Shanghai
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+cipher = Fernet(ENCRYPTION_KEY)
+
+TWELVE_DATA_URL = cipher.decrypt(b'gAAAAABpX2App_DGAktBZLYAxKvv8WYTZgDagkxRPd_PKauN_VSBSeAIV3NYxEAJIvsSJ1eS76OWY_I-59Kym3TFhuEun39CywUmSm2wPuVjGmHNwgqDUrqYzRhdcoTw_wM2EnCC62k4').decode()
+TWELVE_DATA_KEY = cipher.decrypt(b'gAAAAABpX1jAwrYOW4EGBhuRwrU7Iz8s_tfJssQ0-yzCEOWoAVzG-4enR4wW1lxyBiqFc7N0k8HmdqBkiRj8SVoCmw5khSOq4vRX1hJDuRaYqylrT3NYq7XJ609kGEr11DrMAPXEWbFQ').decode()
+WECOM_WEBHOOK = cipher.decrypt(b'gAAAAABpX1lf_OZccl6JYh14FJlLEmJDtV37L1jW5MMRhdA09xypIujad5g1e2axJUwOA_gKCF3kodoYVG9Wrj1TyayLXmSn3t6lnG5xzNXedE01dNq1E-S77oYFLhaS9g3Ay24P2apcvBGkaV61cI76Pk7jNrjRTNjhxwgrvT3FiDHaQk3FULbFwvQJy0BADgv1cli4_vzB').decode()
+TG_TOKEN = cipher.decrypt(b'gAAAAABpX1mGV2Aqsf_W0eXjohhjNzWB4pDhsPqRDDei9jfKMkwsCT9Bu0qHzOGDAaapiBGNPwP1hyk46SN78yq2si5RylJTSBmdh6wPJlWpeAZtlEgu7wuxlEi3AMByECDdWnBx1iol').decode()
+TG_CHAT_ID = cipher.decrypt(b'gAAAAABpX1maZKmpePVf4ancQG2QpOX7YXk4wPMqPTw8x4DgJN3cKaVO6I0cQp0eCpL1gR4lim2W6k0LWXqH-R28889G2I446Q==').decode()
 
 CONFIG = {
     "watch_list" : ["XAU/USD", "TSLA"],
@@ -26,7 +30,8 @@ CONFIG = {
     "intervals": ["5M", "1H"],
 
     "api": {
-        "TWELVE_DATA_KEY": API_KEY,
+        "TWELVE_DATA_URL": TWELVE_DATA_URL,
+        "TWELVE_DATA_KEY": TWELVE_DATA_KEY,
         "MAX_CONCURRENT": 1,
         "KLINE_LIMIT": 500,
         "MIN_INTERVAL": 2
@@ -71,6 +76,7 @@ class DataEngine:
     def __init__(self, cfg: dict, market_cfg: dict):
         self.cfg = cfg
         self.market_cfg = market_cfg
+        self.api_url = cfg.get('TWELVE_DATA_URL')
         self.api_key = cfg.get('TWELVE_DATA_KEY')
 
         self._request_lock = asyncio.Lock()
@@ -89,7 +95,6 @@ class DataEngine:
         else:
             td_interval = interval_lower
 
-        url = "https://api.twelvedata.com/time_series"
         params = {
             "symbol": symbol,
             "interval": td_interval,
@@ -105,7 +110,7 @@ class DataEngine:
                 await asyncio.sleep(self._min_interval - elapsed)
 
             try:
-                async with session.get(url, params=params, timeout=15) as r:
+                async with session.get(self.api_url, params=params, timeout=15) as r:
                     self._last_request_time = time.time()
 
                     if r.status == 429:

@@ -12,12 +12,15 @@ import os
 from datetime import datetime, timedelta
 import time
 from typing import List, Dict, Optional, Any
+from cryptography.fernet import Fernet
 
-TG_TOKEN = os.getenv("TG_TOKEN")
-TG_CHAT_ID = os.getenv("TG_CHAT_ID")
-WECOM_WEBHOOK = os.getenv("WECOM_WEBHOOK")
-# TZ -> Asia/Shanghai
-TZ = os.getenv("TZ")
+TZ = os.getenv("TZ") # TZ -> Asia/Shanghai
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+cipher = Fernet(ENCRYPTION_KEY)
+
+WECOM_WEBHOOK = cipher.decrypt(b'gAAAAABpX1lf_OZccl6JYh14FJlLEmJDtV37L1jW5MMRhdA09xypIujad5g1e2axJUwOA_gKCF3kodoYVG9Wrj1TyayLXmSn3t6lnG5xzNXedE01dNq1E-S77oYFLhaS9g3Ay24P2apcvBGkaV61cI76Pk7jNrjRTNjhxwgrvT3FiDHaQk3FULbFwvQJy0BADgv1cli4_vzB').decode()
+TG_TOKEN = cipher.decrypt(b'gAAAAABpX1mGV2Aqsf_W0eXjohhjNzWB4pDhsPqRDDei9jfKMkwsCT9Bu0qHzOGDAaapiBGNPwP1hyk46SN78yq2si5RylJTSBmdh6wPJlWpeAZtlEgu7wuxlEi3AMByECDdWnBx1iol').decode()
+TG_CHAT_ID = cipher.decrypt(b'gAAAAABpX1maZKmpePVf4ancQG2QpOX7YXk4wPMqPTw8x4DgJN3cKaVO6I0cQp0eCpL1gR4lim2W6k0LWXqH-R28889G2I446Q==').decode()
 
 CONFIG = {
     "watch_list" : [],
