@@ -5,10 +5,8 @@ import os
 import sys
 from cryptography.fernet import Fernet
 
-# 基础适配
 os.environ['TERM'] = os.environ.get('TERM', 'xterm-256color')
 
-# 颜色配置
 C_BLUE = "\033[38;5;75m"
 C_CYAN = "\033[38;5;123m"
 C_GREEN = "\033[38;5;84m"
@@ -23,9 +21,7 @@ try:
 except ImportError:
     ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')
 
-
 def draw_header():
-    """绘制精致的头部 UI"""
     print(f"\n{C_BLUE}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓{C_END}")
     print(
         f"                 {C_BOLD}{C_CYAN}CIPHER-BOT SECURITY TERMINAL{C_END} ")
@@ -41,7 +37,7 @@ def draw_header():
 
 def run_tool():
     if not ENCRYPTION_KEY:
-        print(f"{C_RED}❌ 致命错误: 找不到 ENCRYPTION_KEY，请检查配置！{C_END}")
+        print(f"{C_RED}❌ 找不到 ENCRYPTION_KEY，请检查配置！{C_END}")
         return
 
     # 初始化解密器
@@ -53,11 +49,12 @@ def run_tool():
 
     while True:
         try:
-            prompt = f"{C_BOLD}{C_CYAN}❯{C_END} "
+            prompt = f"{C_BOLD}{C_CYAN}❯{C_END}"
             print()
             raw_input = input(prompt).strip()
 
-            if not raw_input: continue
+            if not raw_input:
+                continue
 
             cmd_lower = raw_input.lower()
             if cmd_lower == 'q': break
@@ -89,8 +86,4 @@ def run_tool():
 
 
 if __name__ == "__main__":
-    try:
-        run_tool()
-    except (KeyboardInterrupt, EOFError):
-        print(f"\n\n{C_YELLOW}👋 系统已安全离线。{C_END}")
-        sys.exit()
+    run_tool()
