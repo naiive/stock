@@ -16,7 +16,7 @@ from cryptography.fernet import Fernet
 
 TZ = os.getenv("TZ") # TZ -> Asia/Shanghai
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
-cipher = Fernet(ENCRYPTION_KEY)
+cipher = Fernet(ENCRYPTION_KEY.encode())
 
 TWELVE_DATA_URL = cipher.decrypt(b'gAAAAABpX2App_DGAktBZLYAxKvv8WYTZgDagkxRPd_PKauN_VSBSeAIV3NYxEAJIvsSJ1eS76OWY_I-59Kym3TFhuEun39CywUmSm2wPuVjGmHNwgqDUrqYzRhdcoTw_wM2EnCC62k4').decode()
 TWELVE_DATA_KEY = cipher.decrypt(b'gAAAAABpX1jAwrYOW4EGBhuRwrU7Iz8s_tfJssQ0-yzCEOWoAVzG-4enR4wW1lxyBiqFc7N0k8HmdqBkiRj8SVoCmw5khSOq4vRX1hJDuRaYqylrT3NYq7XJ609kGEr11DrMAPXEWbFQ').decode()

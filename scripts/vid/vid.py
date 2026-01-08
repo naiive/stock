@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet
 from conf.config import ENCRYPTION_KEY
 
 S = requests.Session()
-cipher = Fernet(ENCRYPTION_KEY)
+cipher = Fernet(ENCRYPTION_KEY.encode())
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 script_path = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_path)
