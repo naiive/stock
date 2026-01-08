@@ -371,20 +371,31 @@ class NotifyEngine:
 
         tv_url = f"https://cn.tradingview.com/chart/?symbol={exchange}%3A{tv_symbol}"
 
+        price = res.get('price', 0)
+        change = res.get('change', 0)
+        change_str = f"({'+' if change >= 0 else ''}{change}%)"
+
+        ema200 = res.get('ema200', 0)
+        support = res.get('support', 0)
+        resistance = res.get('resistance', 0)
+
         raw_signal = res.get('signal', 'No')
         if raw_signal == "Long":
             signal_text = "🟢 Long"
             trend_str = str(res.get('trend_r', ""))
+            e_b = "📈EMA200" if price > ema200 else "📉EMA200"
+            r_b = "📈压力位" if price > resistance else "📉压力位"
+            judge_text = f"{e_b}|{r_b}"
         elif raw_signal == "Short":
             signal_text = "🔴 Short"
             trend_str = str(res.get('trend_s', ""))
+            e_b = "📈EMA200" if price > ema200 else "📉EMA200"
+            r_b = "📈支撑位" if price > support else "📉支撑位"
+            judge_text = f"{e_b}|{r_b}"
         else:
             signal_text = "No"
             trend_str = str(res.get('trend_r', ""))
-
-        price = res.get('price', 0)
-        change = res.get('change', 0)
-        change_str = f"({'+' if change >= 0 else ''}{change}%)"
+            judge_text = ""
 
         energy_str = str(res.get('energy', ""))
         energy_items = energy_str.split('-') if energy_str else []
@@ -400,10 +411,11 @@ class NotifyEngine:
                 f"💹 <b>代码: </b> <b>{symbol_link}【{interval.upper()}】</b>\n"
                 f"💰 <b>价格:</b> <code>{price}{change_str}</code>\n"
                 f"💸 <b>信号:</b> <code>{signal_text}</code>\n"
+                f"⚖️ <b>判断:</b> <code>{judge_text}</code>\n"
                 f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
                 f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
                 f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
-                # f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
+                f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
                 f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
             )
             return tg_msg_text
@@ -414,10 +426,11 @@ class NotifyEngine:
                 f"💹 代码: {symbol_link}【{interval.upper()}】\n"
                 f"💰 价格: {price}{change_str}\n"
                 f"💸 信号: {signal_text}\n"
+                f"⚖️ 判断: {judge_text}\n"
                 f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
                 f"🧨 挤压: {res.get('bars', 0)} Bars\n"
                 f"📊 动能: {mom_icons if mom_icons else '无'}\n"
-                # f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
+                f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
                 f"📅 日期: {res.get('date', '-')}"
             )
             return wecom_msg_text
