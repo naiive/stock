@@ -428,4 +428,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (KeyboardInterrupt, EOFError):
+        print("\n\n👋 系统已安全离线")
+        sys.exit()

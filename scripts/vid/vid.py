@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import os, re, time, requests, json, base64, urllib3, threading, urllib.parse
+import sys
+
 from bs4 import BeautifulSoup
 from queue import Queue
 from tqdm import tqdm
@@ -218,4 +220,8 @@ def start_scrape():
         print(f"Failed to start: {e}")
 
 if __name__ == "__main__":
-    start_scrape()
+    try:
+        start_scrape()
+    except (KeyboardInterrupt, EOFError):
+        print("\n\n👋 系统已安全离线")
+        sys.exit()
