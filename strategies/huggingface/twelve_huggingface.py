@@ -533,7 +533,7 @@ class NotifyEngine:
         msg = (
             f"💓 **Twelve机器人**\n"
             f"━━━━━━━━━━━━━━\n"
-            f"状态: 系统心跳正常\n"
+            f"状态: 心跳正常\n"
             f"时间: {now_str}\n"
         )
 
