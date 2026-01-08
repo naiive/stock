@@ -366,8 +366,8 @@ class StrategyEngine:
             "bars": int(prev['sqz_id']),
             "ema200": round(cur['ema200'], 4),
             "energy": "-".join(energy),
-            "support": str(round(cur['srb_sup'], 4)),
-            "resistance": str(round(cur['srb_res'], 4)),
+            "support": round(cur['srb_sup'], 4),
+            "resistance": round(cur['srb_res'], 4),
             "trend_r": "-".join(tr),
             "trend_s": "-".join(ts)
         }
