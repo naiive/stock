@@ -305,8 +305,8 @@ def post_export_notify(
                 is_first_page=(idx == 1),
             )
             send_telegram(
-                TELEGRAM_CONFIG["BOT_TOKEN"],
-                str(TELEGRAM_CONFIG["CHAT_ID"]).strip(),
+                TELEGRAM_CONFIG["TG_TOKEN"],
+                str(TELEGRAM_CONFIG["TG_CHAT_ID"]).strip(),
                 clip_for_telegram(f"{title}\n\n{body}"),
                 TELEGRAM_CONFIG.get("DISABLE_WEB_PAGE_PREVIEW", True),
             )

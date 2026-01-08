@@ -53,8 +53,8 @@ CONFIG = {
         "TG_ENABLE": False,      # telegram bot 发送
 
         "WECOM_WEBHOOK": WECOM_CONFIG.get("WECOM_WEBHOOK"),
-        "TG_TOKEN": TELEGRAM_CONFIG.get("BOT_TOKEN"),
-        "TG_CHAT_ID": TELEGRAM_CONFIG.get("CHAT_ID")
+        "TG_TOKEN": TELEGRAM_CONFIG.get("TG_TOKEN"),
+        "TG_CHAT_ID": TELEGRAM_CONFIG.get("TG_CHAT_ID")
     }
 }
 

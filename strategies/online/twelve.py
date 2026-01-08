@@ -22,7 +22,8 @@ CONFIG = {
     "intervals": ["5M", "1H"],
 
     "api": {
-        "TWELVE_DATA_KEY": TWELVE_DATA_CONFIG.get("API_KEY"), # Twelve Data API Key
+        "TWELVE_DATA_URL": TWELVE_DATA_CONFIG.get("TWELVE_DATA_URL"), # Twelve Data API Url
+        "TWELVE_DATA_KEY": TWELVE_DATA_CONFIG.get("TWELVE_DATA_KEY"), # Twelve Data API Key
         "MAX_CONCURRENT": 1, # 免费版建议设为 1 最大进程数
         "KLINE_LIMIT": 500,  # K线获取数量
         "MIN_INTERVAL": 2    # 串行等待时间 2 秒
@@ -76,6 +77,7 @@ class DataEngine:
         """
         self.cfg = cfg
         self.market_cfg = market_cfg
+        self.api_url = cfg.get('TWELVE_DATA_URL')
         self.api_key = cfg.get('TWELVE_DATA_KEY')
 
         # 频率控制：Twelve Data 免费版 8次/分钟
@@ -105,7 +107,6 @@ class DataEngine:
             # 备用：如果没有匹配到，尝试原样输出或给个默认值
             td_interval = interval_lower
 
-        url = "https://api.twelvedata.com/time_series"
         params = {
             "symbol": symbol,
             "interval": td_interval,
@@ -122,7 +123,7 @@ class DataEngine:
                 await asyncio.sleep(self._min_interval - elapsed)
 
             try:
-                async with session.get(url, params=params, timeout=15) as r:
+                async with session.get(self.api_url, params=params, timeout=15) as r:
                     self._last_request_time = time.time()
 
                     if r.status == 429:
