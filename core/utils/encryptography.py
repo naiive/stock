@@ -28,14 +28,14 @@ def draw_header():
     """绘制精致的头部 UI"""
     print(f"\n{C_BLUE}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓{C_END}")
     print(
-        f"               {C_BOLD}{C_CYAN}🛡️  CIPHER-BOT SECURITY TERMINAL{C_END} ")
+        f"                 {C_BOLD}{C_CYAN}CIPHER-BOT SECURITY TERMINAL{C_END} ")
     print(f"{C_BLUE}┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫{C_END}")
     key_display = str(ENCRYPTION_KEY)[:5] + "..." if ENCRYPTION_KEY else "UNDEFINED"
     print(
-        f"          {C_GRAY}MASTER KEY:{C_END} {C_YELLOW}{key_display}{C_END}  {C_GRAY}| STATUS:{C_END} {C_GREEN}ACTIVE{C_END} ")
+        f"          {C_GRAY}ENCRYPTION KEY:{C_END} {C_YELLOW}{key_display}{C_END}  {C_GRAY}| STATUS:{C_END} {C_GREEN}ACTIVE{C_END} ")
     print(f"{C_BLUE}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛{C_END}")
     print(
-        f"{C_BOLD}操作{C_END}: {C_GREEN}e <text>{C_END} 加密  │  {C_YELLOW}d <token>{C_END} 解密  │  {C_RED}c{C_END} 清屏  │  {C_RED}q{C_END} 退出")
+        f"{C_BOLD}   操作{C_END}: {C_GREEN}e <text>{C_END} 加密  │  {C_YELLOW}d <token>{C_END} 解密  │  {C_RED}c{C_END} 清屏  │  {C_RED}q{C_END} 退出")
     print(f" {C_GRAY}────────────────────────────────────────────────────────────{C_END}")
 
 
