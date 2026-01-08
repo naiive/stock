@@ -428,15 +428,15 @@ class NotifyEngine:
         if raw_signal == "Long":
             signal_text = "🟢 Long"
             trend_str = str(res.get('trend_r', ""))
-            e_b = "📈EMA200" if price > ema200 else "📉EMA200"
-            r_b = "📈压力位" if price > resistance else "📉压力位"
-            judge_text = f"{e_b}|{r_b}"
+            e_b = "📈EMA" if price > ema200 else "📉EMA"
+            r_b = "📈压力" if price > resistance else "📉压力"
+            judge_text = f"{e_b}{r_b}"
         elif raw_signal == "Short":
             signal_text = "🔴 Short"
             trend_str = str(res.get('trend_s', ""))
-            e_b = "📈EMA200" if price > ema200 else "📉EMA200"
-            r_b = "📈支撑位" if price > support else "📉支撑位"
-            judge_text = f"{e_b}|{r_b}"
+            e_b = "📈EMA" if price > ema200 else "📉EMA"
+            r_b = "📈支撑" if price > support else "📉支撑"
+            judge_text = f"{e_b}{r_b}"
         else:
             signal_text = "No"
             trend_str = str(res.get('trend_r', ""))
