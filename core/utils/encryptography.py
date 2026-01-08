@@ -54,6 +54,7 @@ def run_tool():
     while True:
         try:
             prompt = f"{C_BOLD}{C_CYAN}❯{C_END} "
+            print()
             raw_input = input(prompt).strip()
 
             if not raw_input: continue
@@ -74,11 +75,11 @@ def run_tool():
 
             if mode == 'e':
                 res = cipher.encrypt(content.encode()).decode()
-                print(f"e{C_GREEN}✚ ENCRYPTED{C_END}")
+                print(f"{C_GREEN}🔐ENCRYPTED ❯❯❯{C_END}")
                 print(f"{C_BOLD}{res}{C_END}")
             elif mode == 'd':
                 res = cipher.decrypt(content.encode()).decode()
-                print(f"{C_YELLOW}minus DECRYPTED{C_END}")
+                print(f"{C_YELLOW}🔓DECRYPTED ❯❯❯{C_END}")
                 print(f"{C_BOLD}{C_CYAN}{res}{C_END}")
             else:
                 print(f"{C_RED}❌ 无效指令模式: {mode}{C_END}")
