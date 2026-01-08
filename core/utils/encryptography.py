@@ -30,7 +30,7 @@ def draw_header():
     print(
         f"               {C_BOLD}{C_CYAN}🛡️  CIPHER-BOT SECURITY TERMINAL{C_END} ")
     print(f"{C_BLUE}┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫{C_END}")
-    key_display = str(ENCRYPTION_KEY)[:10] + "..." if ENCRYPTION_KEY else "UNDEFINED"
+    key_display = str(ENCRYPTION_KEY)[:5] + "..." if ENCRYPTION_KEY else "UNDEFINED"
     print(
         f"          {C_GRAY}MASTER KEY:{C_END} {C_YELLOW}{key_display}{C_END}  {C_GRAY}| STATUS:{C_END} {C_GREEN}ACTIVE{C_END} ")
     print(f"{C_BLUE}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛{C_END}")
