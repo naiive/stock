@@ -89,5 +89,5 @@ if __name__ == "__main__":
     try:
         run_tool()
     except (KeyboardInterrupt, EOFError):
-        print(f"\n\n{C_YELLOW}👋 系统已安全离线。{C_END}")
+        print(f"\n\n{C_YELLOW}👋 系统已安全离线{C_END}")
         sys.exit()
