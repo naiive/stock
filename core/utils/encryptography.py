@@ -49,7 +49,7 @@ def run_tool():
 
     while True:
         try:
-            prompt = f"{C_BOLD}{C_CYAN}❯{C_END}"
+            prompt = f"{C_BOLD}{C_CYAN}❯{C_END} "
             print()
             raw_input = input(prompt).strip()
 
