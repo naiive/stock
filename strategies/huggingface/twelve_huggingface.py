@@ -276,16 +276,20 @@ class StrategyEngine:
 
         signal = "No"
         if cur['sqz_status'] == "OFF" and prev['sqz_status'] == "ON" and prev['sqz_id'] >= self.cfg['min_sqz_bars']:
-            if (cur['close'] > cur['ema200']
-                    and change > 0
-                    and cur['close'] > cur['srb_res']
-                    and cur['sqz_hcolor'] == "亮绿"):
+            if (
+                # cur['close'] > cur['ema200']
+                change > 0
+                # and cur['close'] > cur['srb_res']
+                and cur['sqz_hcolor'] == "亮绿"
+            ):
                 signal = "Long"
 
-            elif (cur['close'] < cur['ema200']
-                  and change < 0
-                  and cur['close'] < cur['srb_sup']
-                  and cur['sqz_hcolor'] == "亮红"):
+            elif (
+                # cur['close'] < cur['ema200']
+                change < 0
+                # and cur['close'] < cur['srb_sup']
+                and cur['sqz_hcolor'] == "亮红"
+            ):
                 signal = "Short"
 
         energy, tr, ts = [], [], []
@@ -399,7 +403,7 @@ class NotifyEngine:
                 f"🔄 <b>时间:</b> <code>{res.get('time', '-')}（UTC+8）</code>\n"
                 f"🧨 <b>挤压:</b> <code>{res.get('bars', 0)} Bars</code>\n"
                 f"📊 <b>动能:</b> {mom_icons if mom_icons else '无'}\n"
-                f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
+                # f"🚀 <b>趋势:</b> {trend_icons if trend_icons else '无'}\n"
                 f"📅 <b>日期:</b> <code>{res.get('date', '-')}</code>\n"
             )
             return tg_msg_text
@@ -413,7 +417,7 @@ class NotifyEngine:
                 f"🔄 时间: {res.get('time', '-')}（UTC+8）\n"
                 f"🧨 挤压: {res.get('bars', 0)} Bars\n"
                 f"📊 动能: {mom_icons if mom_icons else '无'}\n"
-                f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
+                # f"🚀 趋势: {trend_icons if trend_icons else '无'}\n"
                 f"📅 日期: {res.get('date', '-')}"
             )
             return wecom_msg_text
