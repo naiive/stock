@@ -24,7 +24,7 @@ CONFIG = {
     "intervals": ["1H", "4H", "1D"],
 
     "api": {
-        "active_exchange": "OKX", # OKX 或 BINANCE
+        "ACTIVE_EXCHANGE": "OKX", # OKX 或 BINANCE
         "OKX_BASE_URL": "https://www.okx.com",          # OKX合约接口y域名
         "BINANCE_BASE_URL": "https://fapi.binance.com", # binance合约接口y域名
         "TOP_N": 100,            # 自动抓取成交额前50的品种
@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 class DataEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.exchange = cfg.get("active_exchange").upper()
+        self.exchange = cfg.get("ACTIVE_EXCHANGE").upper()
         self.okx_base = cfg.get('OKX_BASE_URL')
         self.binance_base = cfg.get('BINANCE_BASE_URL')
 
@@ -484,7 +484,7 @@ class NotifyEngine:
         """
         # 假设你在通知或主循环逻辑中获取了 symbol
         symbol = res.get('symbol', 'Unknown')
-        active_exchange = CONFIG["api"].get("active_exchange")
+        active_exchange = CONFIG["api"].get("ACTIVE_EXCHANGE")
 
         # OKX:     ETH-USDT-SWAP -> ETHUSDT
         # Binance: ETHUSDT -> ETHUSDT

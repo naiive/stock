@@ -26,7 +26,7 @@ CONFIG = {
     "watch_list" : [],
     "intervals": ["1H", "4H", "1D"],
     "api": {
-        "active_exchange": "OKX",
+        "ACTIVE_EXCHANGE": "OKX",
         "OKX_BASE_URL": "https://www.okx.com",
         "BINANCE_BASE_URL": "https://fapi.binance.com",
         "TOP_N": 100,
@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 class DataEngine:
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.exchange = cfg.get("active_exchange").upper()
+        self.exchange = cfg.get("ACTIVE_EXCHANGE").upper()
         self.okx_base = cfg.get('OKX_BASE_URL')
         self.binance_base = cfg.get('BINANCE_BASE_URL')
 
@@ -404,7 +404,7 @@ class NotifyEngine:
     @staticmethod
     def format_single_signal(res, interval, tag):
         symbol = res.get('symbol', 'Unknown')
-        active_exchange = CONFIG["api"].get("active_exchange")
+        active_exchange = CONFIG["api"].get("ACTIVE_EXCHANGE")
         tv_symbol = symbol.replace("-SWAP", "").replace("-", "")
 
         if active_exchange == "BINANCE":
