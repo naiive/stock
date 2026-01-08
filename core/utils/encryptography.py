@@ -86,4 +86,8 @@ def run_tool():
 
 
 if __name__ == "__main__":
-    run_tool()
+    try:
+        run_tool()
+    except (KeyboardInterrupt, EOFError):
+        print(f"\n\n{C_YELLOW}👋 系统已安全离线。{C_END}")
+        sys.exit()
