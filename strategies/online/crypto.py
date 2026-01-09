@@ -44,7 +44,10 @@ CONFIG = {
         "ema_length": 200,      # EMA
 
         "srb_left": 15,         # 支撑压力左侧
-        "srb_right": 15         # 支撑压力右侧
+        "srb_right": 15,        # 支撑压力右侧
+
+        "adx_length": 14,       # ADX长度
+        "adx_threshold": 25    # ADX水平【指标不使用，只是用作判断】
     },
 
     "notify": {
@@ -364,6 +367,78 @@ class IndicatorEngine:
 
         return df
 
+    @staticmethod
+    def wilder_smoothing(series: pd.Series, length: int):
+        """
+        实现 Pine Script 中 ADX/DI 所使用的 Wilder's Smoothing 逻辑。
+        SmoothedValue = Prev_SmoothedValue - (Prev_SmoothedValue / length) + CurrentValue
+        """
+        # 转换为 numpy 数组以便进行迭代计算
+        values = series.values
+        smoothed = np.empty_like(values)
+        smoothed.fill(np.nan)
+
+        # 初始化第一个值（通常为前 length 个值的 SMA，但Pine Script中是基于累积的逻辑）
+        # 在许多技术分析库中，第一个平滑值直接使用前 length 个值的简单平均。
+        # 为了简化且不引入复杂的迭代，我们采用技术分析库常用的惯例：
+        # 第一个平滑值设置为前 length 个值的 SMA
+        smoothed[length - 1] = np.sum(values[:length])
+
+        # 从第 length 个值开始应用 Wilder's Smoothing
+        for i in range(length, len(values)):
+            smoothed[i] = smoothed[i - 1] - (smoothed[i - 1] / length) + values[i]
+
+        return pd.Series(smoothed, index=series.index)
+
+    def adx_di_indicator(self, df: pd.DataFrame) -> pd.DataFrame:
+
+        length =  self.cfg.get('adx_length')
+        threshold =  self.cfg.get('adx_threshold')
+
+        # --- 1. 计算 True Range (TR) ---
+        high_low = df['high'] - df['low']
+        high_prev_close = np.abs(df['high'] - df['close'].shift(1))
+        low_prev_close = np.abs(df['low'] - df['close'].shift(1))
+
+        df['TrueRange'] = high_low.combine(high_prev_close, max).combine(low_prev_close, max)
+
+        # --- 2. 计算 Directional Movement (+DM, -DM) ---
+        up_move = df['high'] - df['high'].shift(1)
+        down_move = df['low'].shift(1) - df['low']
+
+        # +DM 逻辑: UpMove > DownMove 且 UpMove > 0
+        df['adx_plus'] = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+
+        # -DM 逻辑: DownMove > UpMove 且 DownMove > 0
+        df['adx_minus'] = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+
+        # --- 3. Wilder's Smoothing (TR, +DM, -DM) ---
+        df['SmoothedTR'] = self.wilder_smoothing(df['TrueRange'], length)
+        df['SmoothedDMPlus'] = self.wilder_smoothing(df['adx_plus'], length)
+        df['SmoothedDMMinus'] = self.wilder_smoothing(df['adx_minus'], length)
+
+        # --- 4. 计算 +DI 和 -DI ---
+        # 乘以 100
+        df['adx_plus'] = (df['SmoothedDMPlus'] / df['SmoothedTR']) * 100
+        df['adx_minus'] = (df['SmoothedDMMinus'] / df['SmoothedTR']) * 100
+
+        # --- 5. 计算 DX (Directional Index) ---
+        # DX = |+DI - -DI| / (+DI + -DI) * 100
+        # 避免除以零
+        sum_di = df['adx_plus'] + df['adx_minus']
+        df['DX'] = np.where(sum_di != 0, np.abs(df['adx_plus'] - df['adx_minus']) / sum_di * 100, 0)
+
+        # --- 6. 计算 ADX (DX 的 SMA) ---
+        # Pine Script 中 ADX = sma(DX, len)。在 ADX/DMI 系统中，这通常也意味着 Wilder's Smoothing
+        # 但为严格遵循您的 Pine Script 代码，我们使用标准的 SMA：
+        df['adx'] = df['DX'].rolling(window=length).mean()
+        df['adx_threshold'] = threshold
+
+        # --- 7. 删除一些中间结果列 ---
+        df.drop(columns=['TrueRange', 'SmoothedTR', 'SmoothedDMPlus', 'SmoothedDMMinus', 'DX'], inplace=True)
+
+        return df
+
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         """综合调用所有指标方法"""
         df = df.copy()
@@ -376,6 +451,9 @@ class IndicatorEngine:
 
         # 3. 计算支撑阻力
         df = self.support_resistance_indicator(df)
+
+        # 4. 计算ADX
+        df = self.adx_di_indicator(df)
 
         return df
 
@@ -430,6 +508,8 @@ class StrategyEngine:
             "change": round(change, 2),
             "bars": int(prev['sqz_id']),
             "ema200": round(cur['ema200'], 4),
+            "adx": round(cur['adx'], 4),
+            "adx_threshold": int(cur['adx_threshold']),
             "energy": "-".join(energy),
             "support": round(cur['srb_sup'], 4),
             "resistance": round(cur['srb_res'], 4),
@@ -506,6 +586,8 @@ class NotifyEngine:
         change_str = f"({'+' if change >= 0 else ''}{change}%)"
 
         ema200 = res.get('ema200', 0)
+        adx = res.get('adx', 0)
+        adx_threshold = res.get('adx_threshold', 0)
         support = res.get('support', 0)
         resistance = res.get('resistance', 0)
 
@@ -515,17 +597,22 @@ class NotifyEngine:
             trend_str = str(res.get('trend_r', ""))
             e_b = "📈EMA" if price > ema200 else "📉EMA"
             r_b = "📈压力" if price > resistance else "📉压力"
-            judge_text = f"{e_b}{r_b}"
+            a_b = "📈ADX" if adx > adx_threshold else "📉ADX"
+            judge_text = f"{e_b}{r_b}{a_b}"
         elif raw_signal == "Short":
             signal_text = "🔴 Short"
             trend_str = str(res.get('trend_s', ""))
             e_b = "📈EMA" if price > ema200 else "📉EMA"
             r_b = "📈支撑" if price > support else "📉支撑"
-            judge_text = f"{e_b}{r_b}"
+            a_b = "📈支撑" if adx > adx_threshold else "📉支撑"
+            judge_text = f"{e_b}{r_b}{a_b}"
         else:
             signal_text = "No"
             trend_str = str(res.get('trend_r', ""))
-            judge_text = ""
+            e_b = "🟰EMA"
+            r_b = "🟰支撑"
+            a_b = "🟰支撑"
+            judge_text = f"{e_b}{r_b}{a_b}"
 
         # 动能图标
         energy_str = str(res.get('energy', ""))

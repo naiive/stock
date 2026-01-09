@@ -43,7 +43,9 @@ CONFIG = {
         "min_sqz_bars": 6,
         "ema_length": 200,
         "srb_left": 15,
-        "srb_right": 15
+        "srb_right": 15,
+        "adx_length": 14,
+        "adx_threshold": 25
     },
     "notify": {
         "CONSOLE_LOG": True,
@@ -311,11 +313,46 @@ class IndicatorEngine:
 
         return df
 
+    @staticmethod
+    def wilder_smoothing(series: pd.Series, length: int):
+        values = series.values
+        smoothed = np.empty_like(values)
+        smoothed.fill(np.nan)
+        smoothed[length - 1] = np.sum(values[:length])
+        for i in range(length, len(values)):
+            smoothed[i] = smoothed[i - 1] - (smoothed[i - 1] / length) + values[i]
+        return pd.Series(smoothed, index=series.index)
+
+    def adx_di_indicator(self, df: pd.DataFrame) -> pd.DataFrame:
+        length =  self.cfg.get('adx_length')
+        threshold =  self.cfg.get('adx_threshold')
+        high_low = df['high'] - df['low']
+        high_prev_close = np.abs(df['high'] - df['close'].shift(1))
+        low_prev_close = np.abs(df['low'] - df['close'].shift(1))
+        df['TrueRange'] = high_low.combine(high_prev_close, max).combine(low_prev_close, max)
+        up_move = df['high'] - df['high'].shift(1)
+        down_move = df['low'].shift(1) - df['low']
+        df['adx_plus'] = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+        df['adx_minus'] = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+        df['SmoothedTR'] = self.wilder_smoothing(df['TrueRange'], length)
+        df['SmoothedDMPlus'] = self.wilder_smoothing(df['adx_plus'], length)
+        df['SmoothedDMMinus'] = self.wilder_smoothing(df['adx_minus'], length)
+        df['adx_plus'] = (df['SmoothedDMPlus'] / df['SmoothedTR']) * 100
+        df['adx_minus'] = (df['SmoothedDMMinus'] / df['SmoothedTR']) * 100
+        sum_di = df['adx_plus'] + df['adx_minus']
+        df['DX'] = np.where(sum_di != 0, np.abs(df['adx_plus'] - df['adx_minus']) / sum_di * 100, 0)
+        df['adx'] = df['DX'].rolling(window=length).mean()
+        df['adx_threshold'] = threshold
+        df.drop(columns=['TrueRange', 'SmoothedTR', 'SmoothedDMPlus', 'SmoothedDMMinus', 'DX'], inplace=True)
+
+        return df
+
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df = self.squeeze_momentum_indicator(df)
         df = self.ema_indicator(df)
         df = self.support_resistance_indicator(df)
+        df = self.adx_di_indicator(df)
 
         return df
 
@@ -365,6 +402,8 @@ class StrategyEngine:
             "change": round(change, 2),
             "bars": int(prev['sqz_id']),
             "ema200": round(cur['ema200'], 4),
+            "adx": round(cur['adx'], 4),
+            "adx_threshold": int(cur['adx_threshold']),
             "energy": "-".join(energy),
             "support": round(cur['srb_sup'], 4),
             "resistance": round(cur['srb_res'], 4),
@@ -421,6 +460,8 @@ class NotifyEngine:
         change_str = f"({'+' if change >= 0 else ''}{change}%)"
 
         ema200 = res.get('ema200', 0)
+        adx = res.get('adx', 0)
+        adx_threshold = res.get('adx_threshold', 0)
         support = res.get('support', 0)
         resistance = res.get('resistance', 0)
 
@@ -430,17 +471,22 @@ class NotifyEngine:
             trend_str = str(res.get('trend_r', ""))
             e_b = "📈EMA" if price > ema200 else "📉EMA"
             r_b = "📈压力" if price > resistance else "📉压力"
-            judge_text = f"{e_b}{r_b}"
+            a_b = "📈ADX" if adx > adx_threshold else "📉ADX"
+            judge_text = f"{e_b}{r_b}{a_b}"
         elif raw_signal == "Short":
             signal_text = "🔴 Short"
             trend_str = str(res.get('trend_s', ""))
             e_b = "📈EMA" if price > ema200 else "📉EMA"
             r_b = "📈支撑" if price > support else "📉支撑"
-            judge_text = f"{e_b}{r_b}"
+            a_b = "📈支撑" if adx > adx_threshold else "📉支撑"
+            judge_text = f"{e_b}{r_b}{a_b}"
         else:
             signal_text = "No"
             trend_str = str(res.get('trend_r', ""))
-            judge_text = ""
+            e_b = "🟰EMA"
+            r_b = "🟰支撑"
+            a_b = "🟰支撑"
+            judge_text = f"{e_b}{r_b}{a_b}"
 
         energy_str = str(res.get('energy', ""))
         energy_items = energy_str.split('-') if energy_str else []
