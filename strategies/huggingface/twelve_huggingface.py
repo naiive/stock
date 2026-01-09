@@ -434,14 +434,14 @@ class NotifyEngine:
             trend_str = str(res.get('trend_s', ""))
             e_b = "📈EMA" if price > ema200 else "📉EMA"
             r_b = "📈支撑" if price > support else "📉支撑"
-            a_b = "📈支撑" if adx > adx_threshold else "📉支撑"
+            a_b = "📈ADX" if adx > adx_threshold else "📉ADX"
             judge_text = f"{e_b}{r_b}{a_b}"
         else:
             signal_text = "No"
             trend_str = str(res.get('trend_r', ""))
             e_b = "🟰EMA"
             r_b = "🟰支撑"
-            a_b = "🟰支撑"
+            a_b = "🟰ADX"
             judge_text = f"{e_b}{r_b}{a_b}"
 
         energy_str = str(res.get('energy', ""))
@@ -501,7 +501,7 @@ class NotifyEngine:
                 header = (
                     f"🏛️ <b>外汇【{interval.upper()}】周期</b>\n"
                     f"⏰ 扫描时间 {datetime.now().strftime('%H:%M:%S')}\n"
-                    f"━━━━━━━━━━━━━\n"
+                    f"━━━━━━━━━━━\n"
                 )
 
                 body_parts = [ self.format_single_signal(res, interval, tag) for res in chunk ]
@@ -543,7 +543,7 @@ class NotifyEngine:
                 header = (
                     f"🏛️ 外汇【{interval.upper()}】周期\n"
                     f"⏰ 扫描时间 {datetime.now().strftime('%H:%M:%S')}\n"
-                    f"━━━━━━━━━━━━━\n"
+                    f"━━━━━━━━━━━\n"
                 )
 
                 body_parts = []
@@ -596,7 +596,6 @@ class NotifyEngine:
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         msg = (
             f"💓 **Twelve机器人**\n"
-            f"━━━━━━━━━━━━━━\n"
             f"状态: 心跳正常\n"
             f"时间: {now_str}\n"
         )
