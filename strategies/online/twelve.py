@@ -795,11 +795,11 @@ class TimeEngine:
         if unit == 'm':
             offset_sec = 3
         elif unit == 'h':
-            offset_sec = 5
+            offset_sec = 30
         elif unit == 'd':
-            offset_sec = 5
+            offset_sec = 60
         else:
-            offset_sec = 3
+            offset_sec = 5
 
         # 2. 计算基础对齐时间点 (不带 offset 的整点)
         if unit == 'm':

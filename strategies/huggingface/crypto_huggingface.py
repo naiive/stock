@@ -692,11 +692,11 @@ class TimeEngine:
         if unit == 'm':
             offset_sec = 3
         elif unit == 'h':
-            offset_sec = 5
+            offset_sec = 30
         elif unit == 'd':
-            offset_sec = 5
+            offset_sec = 60
         else:
-            offset_sec = 3
+            offset_sec = 5
 
         if unit == 'm':
             target_min = ((now.minute // val) + 1) * val
