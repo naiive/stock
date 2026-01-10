@@ -2,15 +2,18 @@
 # -*- coding: utf-8 -*-
 
 import json
+import os
+import time
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+import logging
 import asyncio
 import aiohttp
-import logging
-from datetime import datetime, timedelta
-import time
+from aiohttp import web
 from typing import Dict, Optional, Any, List
-from conf.config import TELEGRAM_CONFIG, WECOM_CONFIG
+from cryptography.fernet import Fernet
+
 
 # =====================================================
 # 0. 配置中心 (CONFIG)
@@ -27,9 +30,9 @@ CONFIG = {
         "ACTIVE_EXCHANGE": "OKX", # OKX 或 BINANCE
         "OKX_BASE_URL": "https://www.okx.com",          # OKX合约接口y域名
         "BINANCE_BASE_URL": "https://fapi.binance.com", # binance合约接口y域名
-        "TOP_N": 100,            # 自动抓取成交额前50的品种
-        "MAX_CONCURRENT": 8,    # 最大并发请求数
-        "KLINE_LIMIT": 1000,    # K线数量
+        "TOP_N": 100,             # 自动抓取成交额前50的品种
+        "MAX_CONCURRENT": 8,      # 最大并发请求数
+        "KLINE_LIMIT": 1000,      # K线数量
         "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"] # 排除稳定币之类的
     },
 
@@ -47,7 +50,7 @@ CONFIG = {
         "srb_right": 15,        # 支撑压力右侧
 
         "adx_length": 14,       # ADX长度
-        "adx_threshold": 25    # ADX水平【指标不使用，只是用作判断】
+        "adx_threshold": 25     # ADX水平【指标不使用，只是用作判断】
     },
 
     "notify": {
@@ -55,9 +58,9 @@ CONFIG = {
         "WECOM_ENABLE": True,    # wecom机器人
         "TG_ENABLE": False,      # telegram bot 发送
 
-        "WECOM_WEBHOOK": WECOM_CONFIG.get("WECOM_WEBHOOK"),
-        "TG_TOKEN": TELEGRAM_CONFIG.get("TG_TOKEN"),
-        "TG_CHAT_ID": TELEGRAM_CONFIG.get("TG_CHAT_ID")
+        "WECOM_WEBHOOK": None,
+        "TG_TOKEN": None,
+        "TG_CHAT_ID": None
     }
 }
 
@@ -1109,9 +1112,97 @@ class ScanEngine:
             await asyncio.gather(*workers)
 
 
+# =====================================================
+# 7. 启动引擎 (RunEngine)
+# =====================================================
+class RunEngine:
+    def __init__(self, config: Dict):
+        # 1. 自动处理时区
+        self._setup_timezone()
+
+        # 2. 动态加载配置（处理线上报错问题）
+        self.config = config
+
+        self.local_key = self._load_initial_config()
+
+        # 1. 获取 KEY
+        self.env_key = os.getenv("ENCRYPTION_KEY")
+        self.final_key = self.env_key or self.local_key
+
+        if not self.final_key:
+            raise ValueError("CRITICAL: ENCRYPTION_KEY not found!")
+
+        # 2. 初始化加密对象
+        self.cipher = Fernet(self.final_key.encode())
+
+        # 3. 解密并更新配置
+        self._setup_credentials()
+
+        # 4. 初始化引擎实例
+        self.scan_engine = ScanEngine(self.config)
+
+    @staticmethod
+    def _setup_timezone():
+        os.environ['TZ'] = 'Asia/Shanghai'
+        if hasattr(time, 'tzset'):
+            time.tzset()
+
+    @staticmethod
+    def _load_initial_config():
+        try:
+            from conf.config import ENCRYPTION_KEY as LOCAL_VAL
+            return LOCAL_VAL
+        except (ImportError, ModuleNotFoundError):
+            logger.warning("⚠️ Local config file not found. Switching to Environment Mode.")
+            return None
+
+    def _setup_credentials(self):
+        try:
+            WECOM_WEBHOOK = b'gAAAAABpX1lf_OZccl6JYh14FJlLEmJDtV37L1jW5MMRhdA09xypIujad5g1e2axJUwOA_gKCF3kodoYVG9Wrj1TyayLXmSn3t6lnG5xzNXedE01dNq1E-S77oYFLhaS9g3Ay24P2apcvBGkaV61cI76Pk7jNrjRTNjhxwgrvT3FiDHaQk3FULbFwvQJy0BADgv1cli4_vzB'
+            TG_TOKEN = b'gAAAAABpX1mGV2Aqsf_W0eXjohhjNzWB4pDhsPqRDDei9jfKMkwsCT9Bu0qHzOGDAaapiBGNPwP1hyk46SN78yq2si5RylJTSBmdh6wPJlWpeAZtlEgu7wuxlEi3AMByECDdWnBx1iol'
+            TG_CHAT_ID = b'gAAAAABpX1maZKmpePVf4ancQG2QpOX7YXk4wPMqPTw8x4DgJN3cKaVO6I0cQp0eCpL1gR4lim2W6k0LWXqH-R28889G2I446Q=='
+
+            self.config["notify"]["WECOM_WEBHOOK"] = self.cipher.decrypt(WECOM_WEBHOOK).decode()
+            self.config["notify"]["TG_TOKEN"] = self.cipher.decrypt(TG_TOKEN).decode()
+            self.config["notify"]["TG_CHAT_ID"] = self.cipher.decrypt(TG_CHAT_ID).decode()
+
+        except Exception as e:
+            logger.error(f"Failed to decrypt credentials. Verify that ENCRYPTION_KEY is valid: {e}")
+            raise
+
+    @staticmethod
+    async def _handle_health(request):
+        return web.Response(text="Bot is running", content_type='text/html')
+
+    async def _run_services(self):
+        await asyncio.gather(self.scan_engine.run())
+
+    async def run_huggingface(self):
+        app = web.Application()
+        app.router.add_get('/', self._handle_health)
+        run = web.AppRunner(app)
+        await run.setup()
+        site = web.TCPSite(run, '0.0.0.0', 7860)
+        await site.start()
+        logger.info("✅ HF Mode: Web Dashboard started on port 7860")
+        await self._run_services()
+
+    async def run_local(self):
+        logger.info("✅ Local Mode: Starting engines")
+        await self._run_services()
+
+    def start(self):
+        try:
+            if self.env_key:
+                asyncio.run(self.run_huggingface())
+            else:
+                asyncio.run(self.run_local())
+        except KeyboardInterrupt:
+            logger.warning("Stopped by user")
+        except Exception as e:
+            logger.error(f"Critical error: {e}")
+
+
 if __name__ == "__main__":
-    scanner = ScanEngine(CONFIG)
-    try:
-        asyncio.run(scanner.run())
-    except KeyboardInterrupt:
-        logger.error("APP启动出错")
+    runner = RunEngine(CONFIG)
+    runner.start()
