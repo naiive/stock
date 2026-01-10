@@ -34,7 +34,7 @@ CONFIG = {
     },
 
     "ui": {
-        "refresh_interval": 5   # UI日志刷新时间 秒
+        "refresh_interval": 5    # UI日志刷新时间 秒
     },
 
     "strategy": {
@@ -1319,11 +1319,11 @@ class UIEngine:
         核心 UI 构建方法
         """
 
-        with gr.Blocks(css=self.theme_css, theme=gr.themes.Soft()) as ui:
+        with gr.Blocks() as ui:
             gr.HTML(f"""
                     <div style="text-align:center; padding: 20px 0; background-color: #ffffff; border-bottom: 1px solid #e1e4e8; margin-bottom: 20px;">
                         <h1 style="color: #e67e22; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: 1px;">
-                            BOT监控看板
+                            FOREX-BOT监控看板
                         </h1>
                     </div>
                 """)
@@ -1358,15 +1358,18 @@ class UIEngine:
                     )
 
             # 设置 5 秒定时刷新
-            gr.Timer(5).tick(
+            gr.Timer(self.cfg.get("refresh_interval", 5)).tick(
                 fn=self._refresh_logic,
                 outputs=[signal_table, market_table, status_display, log_display]
             )
 
+        # 把 css 挂载到 ui 对象上，方便其他引擎读取
+        ui.custom_css = self.theme_css
+
         return ui
+
+
 # =====================================================
-
-
 # 8. 启动引擎 (RunEngine)
 # =====================================================
 class RunEngine:
@@ -1374,25 +1377,24 @@ class RunEngine:
         # 1. 自动处理时区
         self._setup_timezone()
 
-        # 2. 动态加载配置（处理线上报错问题）
+        # 2. 动态加载配置
         self.config = config
 
+        # 3. 获取配置
         self.local_key = self._load_initial_config()
-
-        # 1. 获取 KEY
         self.env_key = os.getenv("ENCRYPTION_KEY")
         self.final_key = self.env_key or self.local_key
 
         if not self.final_key:
             raise ValueError("CRITICAL: ENCRYPTION_KEY not found!")
 
-        # 2. 初始化加密对象
+        # 4. 初始化加密对象
         self.cipher = Fernet(self.final_key.encode())
 
-        # 3. 解密并更新配置
+        # 5. 解密并更新配置
         self._setup_credentials()
 
-        # 4. 初始化引擎实例
+        # 6. 初始化引擎实例
         self.scan_engine = ScanEngine(self.config)
 
     @staticmethod
@@ -1440,22 +1442,26 @@ class RunEngine:
         ui = self.scan_engine.ui_e.create_ui()
 
         # 2. 启动扫描引擎任务 (非阻塞)
-        asyncio.create_task(self.scan_engine.run())
+        scan_task = asyncio.create_task(self.scan_engine.run())
 
         # 3. 使用 Gradio 6.0 推荐的启动方式
         logger.info("🚀 Starting Gradio Interface on port 7860...")
 
-        # launch 是一个阻塞操作，但在 asyncio 环境下
-        # 我们使用 prevent_thread_lock 来允许后台任务运行
+        # 4. launch 是一个阻塞操作，但在 asyncio 环境下
         ui.launch(
             server_name="0.0.0.0",
             server_port=7860,
+            css=self.scan_engine.ui_e.theme_css,
+            theme=gr.themes.Soft(),
+            share=True,
             prevent_thread_lock=True
         )
 
-        # 4. 持续保持异步循环
-        while True:
-            await asyncio.sleep(3600)
+        # 5. 让主协程等待扫描任务
+        try:
+            await scan_task
+        except Exception as e:
+            logger.error(f"扫描任务意外终止: {e}")
 
     async def run_local(self):
         logger.info("✅ Local Mode: Starting engines")
@@ -1466,7 +1472,8 @@ class RunEngine:
             if self.env_key:
                 asyncio.run(self.run_huggingface())
             else:
-                asyncio.run(self.run_local())
+                # asyncio.run(self.run_local())
+                asyncio.run(self.run_huggingface())
         except KeyboardInterrupt:
             logger.warning("Stopped by user")
         except Exception as e:
