@@ -712,7 +712,7 @@ class NotifyEngine:
             payload = {
                 "msgtype": "markdown",
                 "markdown": {
-                    "content": f"⚠️ **Twelve系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+                    "content": f"⚠️ **Forex系统异常报警**\n\n> 详情: {error_text}\n> 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
             }
             tasks.append(asyncio.create_task(self._post_request(webhook_url, payload, "wecom_err")))
 
@@ -723,7 +723,7 @@ class NotifyEngine:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             payload = {
                 "chat_id": chat_id,
-                "text": f"⚠️ <b>Twelve系统异常报警</b>\n\n详情: {error_text}",
+                "text": f"⚠️ <b>Forex系统异常报警</b>\n\n详情: {error_text}",
                 "parse_mode": "HTML"
             }
             tasks.append(asyncio.create_task(self._post_request(url, payload, "tg_err")))
@@ -736,7 +736,7 @@ class NotifyEngine:
         """发送系统心跳存活通知"""
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         msg = (
-            f"💓 **Twelve机器人**\n"
+            f"💓 **Forex机器人**\n"
             f"状态: 心跳正常\n"
             f"时间: {now_str}\n"
         )
