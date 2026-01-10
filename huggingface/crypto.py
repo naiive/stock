@@ -11,6 +11,7 @@ import logging
 import asyncio
 import aiohttp
 from aiohttp import web
+import gradio as gr
 from typing import Dict, Optional, Any, List
 from cryptography.fernet import Fernet
 
@@ -34,6 +35,10 @@ CONFIG = {
         "MAX_CONCURRENT": 8,      # 最大并发请求数
         "KLINE_LIMIT": 1000,      # K线数量
         "EXCLUDE_TOKENS": ["USDC", "FDUSD", "DAI", "EUR"] # 排除稳定币之类的
+    },
+
+    "ui": {
+        "refresh_interval": 5   # UI日志刷新时间 秒
     },
 
     "strategy": {
@@ -910,6 +915,8 @@ class ScanEngine:
         self.notify_e = NotifyEngine(cfg['notify'])
         # 定时引擎
         self.timer_e = TimeEngine()
+        # UI引擎
+        self.ui_e = UIEngine(self.cfg)
 
     async def _proc_symbol(self, session, symbol, interval, sem):
         """单个币种的处理流水线"""
@@ -943,6 +950,12 @@ class ScanEngine:
         sem = asyncio.Semaphore(self.cfg['api']['MAX_CONCURRENT'])
         tasks = [self._proc_symbol(session, s, interval, sem) for s in symbols]
         results = list(await asyncio.gather(*tasks))
+
+        # UI 投喂点
+        valid_results = [r for r in results if r is not None]
+        signals = [r for r in valid_results if r.get('signal') != "No"]
+        self.ui_e.update_state(valid_results, signals, interval)
+
         # 这里的 process_results 内部会过滤没有信号的数据并发送 TG
         self.notify_e.process_results(results, interval)
 
@@ -1015,6 +1028,13 @@ class ScanEngine:
                     reason = "关键异常：所有币种详情请求均失败"
                     await self._trigger_circuit_breaker(interval, reason)
                     continue
+
+                # 提取信号用于 UI 信号墙统计
+                signals = [r for r in valid_results if r.get('signal') != "No"]
+                try:
+                    self.ui_e.update_state(valid_results, signals, interval)
+                except Exception as ui_err:
+                    logger.error(f"⚠️ UI 引擎状态更新失败: {ui_err}")
 
                 # ==========================================
                 # 成功逻辑: 处理结果并重置（如果有计数器的话）
@@ -1113,7 +1133,243 @@ class ScanEngine:
 
 
 # =====================================================
-# 7. 启动引擎 (RunEngine)
+# 7. UI引擎 (UIEngine)
+# =====================================================
+class UIEngine:
+    def __init__(self, ui_cfg: dict):
+        self.cfg = ui_cfg
+        self.latest_signals = []
+        self.market_snapshot = pd.DataFrame()
+        self.last_update = "尚未开始"
+        self.log_stream = []
+
+        self.theme_css = """
+        /* 1. 基础容器：亮色背景 */
+        .gradio-container { 
+            max-width: 98% !important; 
+            background-color: #f7f9fc !important; 
+            color: #1a1d21 !important; 
+        }
+
+        /* 2. 状态栏与日志卡片：白底深影，增加专业感 */
+        .stat-card { 
+            background: #ffffff !important; 
+            border: 1px solid #e1e4e8 !important; 
+            padding: 16px !important;
+            border-radius: 12px !important;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
+            min-width: 380px !important; /* 防止状态栏折行 */
+            white-space: nowrap !important;
+        }
+
+        /* 3. 监控状态文字：深色更加醒目 */
+        .stat-card p { 
+            color: #24292e !important; 
+            font-size: 15px !important; 
+            font-weight: 600 !important;
+            margin: 0 !important;
+        }
+
+        /* 4. 实时日志：改为“护眼深蓝”或“亮绿”，白底背景 */
+        .log-box { 
+            background-color: #f0f2f5 !important; 
+            color: #0066cc !important; /* 深蓝色文字，亮色下更易读 */
+            font-family: 'Fira Code', monospace !important; 
+            border: 1px solid #d1d5da !important;
+            padding: 12px !important;
+            border-radius: 8px;
+            font-size: 13px !important;
+            min-height: 120px;
+        }
+
+        /* 5. 表格美化：亮色模式下的表格 */
+        #sig-table { 
+            background: white !important; 
+            border-radius: 12px !important; 
+            overflow: hidden !important; 
+        }
+        #sig-table table { border-collapse: collapse !important; }
+        #sig-table th { background: #f6f8fa !important; color: #586069 !important; }
+
+        /* 6. 强制列宽控制 */
+        #sig-table th:nth-child(1) { width: 90px; }
+        #sig-table th:nth-child(2) { width: 80px; }
+        #sig-table th:nth-child(3) { width: 70px; }
+        #sig-table th:nth-child(4) { width: 100px; }
+        #sig-table th:nth-child(11) { width: 60px; }
+        """
+
+    def update_state(self, all_results, signal_results, interval):
+        """
+        all_results: 当前扫描周期内所有币种的完整数据列表 (包含指标)
+        signal_results: 触发了 Long/Short 信号的币种列表
+        interval: 当前扫描的周期 (如 '1H')
+        """
+        # 1. 更新最后刷新时间
+        self.last_update = datetime.now().strftime("%H:%M:%S")
+
+        # 2. 更新全市场概览快照 (用于 📊 标签页)
+        # 确保每个 item 都带上周期信息，以便 _refresh_logic 识别
+        for item in all_results:
+            item['interval'] = interval
+        self.market_snapshot = all_results
+
+        # 3. 更新信号墙 (用于 🎯 标签页)
+        if signal_results:
+            for s in signal_results:
+                s['interval'] = interval
+            # 将新信号插入列表顶部
+            self.latest_signals = (signal_results + self.latest_signals)
+
+        # 4.生成实时扫描日志
+        log_msg = f"[{interval}] 扫描完成 | 时间: {self.last_update} | 信号: {len(signal_results)}"
+
+        # 如果有信号，详细记录一下哪个币出了信号
+        if signal_results:
+            symbols = [s['symbol'].split('-')[0] for s in signal_results]
+            log_msg += f" (发现: {', '.join(symbols)})"
+
+        # 存入 log_stream，放在最前面（最新的在上面）
+        self.log_stream.insert(0, log_msg)
+        # 只保留最近 20 条日志
+        self.log_stream = self.log_stream[:20]
+
+    def _refresh_logic(self):
+        # --- 内部复用逻辑：将原始数据转为 UI 行 ---
+        def transform_to_row(res):
+            symbol = res.get('symbol', 'Unknown')
+            interval = res.get('interval', '1H')
+            price = res.get('price', 0)
+            ema200 = res.get('ema200', 0)
+            adx = res.get('adx', 0)
+            adx_threshold = res.get('adx_threshold', 0)
+            support = res.get('support', 0)
+            resistance = res.get('resistance', 0)
+            raw_signal = res.get('signal', 'No')
+
+            # 1. 信号与判断逻辑 (复刻 format_single_signal)
+            if raw_signal == "Long":
+                signal_text = "🟢 Long"
+                trend_str = str(res.get('trend_r', ""))
+                e_b = "📈EMA" if price > ema200 else "📉EMA"
+                r_b = "📈压力" if price > resistance else "📉压力"
+                a_b = "📈ADX" if adx > adx_threshold else "📉ADX"
+                judge_text = f"{e_b} / {r_b} / {a_b}"
+            elif raw_signal == "Short":
+                signal_text = "🔴 Short"
+                trend_str = str(res.get('trend_s', ""))
+                e_b = "📈EMA" if price > ema200 else "📉EMA"
+                r_b = "📈支撑" if price > support else "📉支撑"
+                a_b = "📈ADX" if adx > adx_threshold else "📉ADX"
+                judge_text = f"{e_b} / {r_b} / {a_b}"
+            else:
+                # 全市场概览中没有信号时的默认显示
+                signal_text = "⚪ No"
+                trend_str = str(res.get('trend_r', ""))
+                e_b = "📈EMA" if price > ema200 else "📉EMA"
+                r_b = "📈支撑" if price > support else "📉支撑"
+                a_b = "📈ADX" if adx > adx_threshold else "📉ADX"
+                judge_text = f"{e_b} / {r_b} / {a_b}"
+
+            # 2. 动能图标
+            energy_items = str(res.get('energy', "")).split('-')
+            mom_icons = "".join(["🟢" if "绿" in i else "🔴" for i in energy_items[-6:]])
+
+            # 3. 趋势图标
+            trend_list = trend_str.split('-') if trend_str else []
+            trend_icons = "".join(["⬆️" if "高" in t else "⬇️" for t in trend_list[-6:]])
+
+            # 4. TradingView 链接精简 (严格 Markdown 格式)
+            tv_sym = symbol.replace("-SWAP", "").replace("-", "")
+            tv_url = f"https://cn.tradingview.com/chart/?symbol=OKX%3A{tv_sym}.P"
+            tv_link = f"[📊]({tv_url})"
+
+            # 5. 返回行数据
+            return [
+                res.get('date', '-'),
+                res.get('time', '-'),
+                symbol,
+                f"{interval.upper()}",
+                signal_text,
+                f"{price}",
+                f"{res.get('change', 0)}%",
+                judge_text,
+                f"{res.get('bars', 0)}bars",
+                mom_icons or "—",
+                trend_icons or "—",
+                tv_link
+            ]
+
+        # 1. 信号墙：只显示有信号的
+        sig_rows = [transform_to_row(s) for s in self.latest_signals]
+
+        # 2. 全市场概览：显示所有快照数据
+        market_rows = []
+        # 如果 ScanEngine 传过来的是 DataFrame，可以用 .to_dict('records')
+        snapshot_data = self.market_snapshot if isinstance(self.market_snapshot, list) else []
+        for item in snapshot_data:
+            market_rows.append(transform_to_row(item))
+
+        # 3. 状态栏信息
+        status_info = f"🟠【{self.cfg.get('intervals', ['1H'])[0]}】周期 ⏰{self.last_update} 📅{datetime.now().strftime('%m-%d')}"
+        log_html = f"<div class='log-box'>{''.join([f'<div>> {m}</div>' for m in self.log_stream])}</div>"
+
+        return sig_rows, market_rows, status_info, log_html
+
+    def create_ui(self):
+        """
+        核心 UI 构建方法
+        """
+
+        with gr.Blocks(css=self.theme_css, theme=gr.themes.Soft()) as ui:
+            gr.HTML(f"""
+                    <div style="text-align:center; padding: 20px 0; background-color: #ffffff; border-bottom: 1px solid #e1e4e8; margin-bottom: 20px;">
+                        <h1 style="color: #e67e22; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: 1px;">
+                            BOT监控看板
+                        </h1>
+                    </div>
+                """)
+
+            with gr.Row():
+                # 左侧：状态监控面板
+                with gr.Column(scale=1):
+                    with gr.Group(elem_classes="stat-card"):
+                        gr.Markdown("### 🛰️ 监控状态")
+                        status_display = gr.Markdown("等待初次扫描...")
+
+                # 右侧：实时日志输出
+                with gr.Column(scale=3):
+                    with gr.Group(elem_classes="stat-card"):
+                        gr.Markdown("### 📜 实时扫描日志")
+                        log_display = gr.HTML(value="<div class='log-box'>>> 系统启动中...</div>")
+
+            # 数据展示 Tab 区域
+            with gr.Tabs(elem_classes="tabs"):
+                with gr.TabItem("🎯 信号墙"):
+                    signal_table = gr.DataFrame(
+                        headers=["日期", "时间", "代码", "周期", "信号", "现价", "涨幅", "判断", "挤压", "动能", "趋势", "图表"],
+                        datatype="markdown",
+                        elem_id="sig-table",
+                        wrap=False,
+                        interactive=False
+                    )
+                with gr.TabItem("📊 全市场"):
+                    market_table = gr.DataFrame(
+                        headers=["日期", "时间", "代码", "周期", "信号", "现价", "涨幅", "判断", "挤压", "动能", "趋势", "图表"],
+                        datatype="markdown", elem_id="market-table", interactive=False
+                    )
+
+            # 设置 5 秒定时刷新
+            gr.Timer(5).tick(
+                fn=self._refresh_logic,
+                outputs=[signal_table, market_table, status_display, log_display]
+            )
+
+        return ui
+
+
+# =====================================================
+# 8. 启动引擎 (RunEngine)
 # =====================================================
 class RunEngine:
     def __init__(self, config: Dict):
@@ -1178,14 +1434,26 @@ class RunEngine:
         await asyncio.gather(self.scan_engine.run())
 
     async def run_huggingface(self):
-        app = web.Application()
-        app.router.add_get('/', self._handle_health)
-        run = web.AppRunner(app)
-        await run.setup()
-        site = web.TCPSite(run, '0.0.0.0', 7860)
-        await site.start()
-        logger.info("✅ HF Mode: Web Dashboard started on port 7860")
-        await self._run_services()
+        # 1. 实例化 UI
+        ui = self.scan_engine.ui_e.create_ui()
+
+        # 2. 启动扫描引擎任务 (非阻塞)
+        asyncio.create_task(self.scan_engine.run())
+
+        # 3. 使用 Gradio 6.0 推荐的启动方式
+        logger.info("🚀 Starting Gradio Interface on port 7860...")
+
+        # launch 是一个阻塞操作，但在 asyncio 环境下
+        # 我们使用 prevent_thread_lock 来允许后台任务运行
+        ui.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            prevent_thread_lock=True
+        )
+
+        # 4. 持续保持异步循环
+        while True:
+            await asyncio.sleep(3600)
 
     async def run_local(self):
         logger.info("✅ Local Mode: Starting engines")
