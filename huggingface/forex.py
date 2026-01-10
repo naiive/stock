@@ -1453,7 +1453,6 @@ class RunEngine:
             server_port=7860,
             css=self.scan_engine.ui_e.theme_css,
             theme=gr.themes.Soft(),
-            share=True,
             prevent_thread_lock=True
         )
 
