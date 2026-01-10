@@ -9,9 +9,9 @@
 <br/>
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](#许可协议)
-[![Status](https://img.shields.io/badge/status-active-success.svg)](#)
-[![Made with ❤️](https://img.shields.io/badge/made%20with-%E2%9D%A4-red.svg)](#)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)]()
+[![Status](https://img.shields.io/badge/status-active-success.svg)]
+[![Made with ❤️](https://img.shields.io/badge/made%20with-%E2%9D%A4-red.svg)]()
 
 </div>
 
@@ -76,5 +76,3 @@ deactivate
 欢迎提交 Issue/PR 共同完善策略与指标生态。
 
 本项目采用 MIT 许可协议，详见 LICENSE（若未包含，可按需补充）。
-
-—— 祝交易顺利，风控常伴。📈
