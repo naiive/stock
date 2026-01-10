@@ -1316,7 +1316,7 @@ class UIEngine:
 
         return sig_rows, market_rows, status_info, log_html
 
-    def create_ui(self):
+    def create_demo(self):
         """
         核心 UI 构建方法
         """
@@ -1436,7 +1436,7 @@ class RunEngine:
 
     async def run_huggingface(self):
         # 1. 实例化 UI
-        ui = self.scan_engine.ui_e.create_ui()
+        demo = self.scan_engine.ui_e.create_demo()
 
         # 2. 启动扫描引擎任务 (非阻塞)
         scan_task = asyncio.create_task(self.scan_engine.run())
@@ -1447,7 +1447,7 @@ class RunEngine:
         logger.info("🚀 Starting Gradio Interface on port 7860...")
 
         # 4. launch 是一个阻塞操作，但在 asyncio 环境下
-        ui.launch(
+        demo.launch(
             server_name="0.0.0.0",
             server_port=7860,
             css=self.scan_engine.ui_e.theme_css,
