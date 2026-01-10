@@ -1319,7 +1319,7 @@ class UIEngine:
         核心 UI 构建方法
         """
 
-        with gr.Blocks() as ui:
+        with gr.Blocks() as demo:
             gr.HTML(f"""
                     <div style="text-align:center; padding: 20px 0; background-color: #ffffff; border-bottom: 1px solid #e1e4e8; margin-bottom: 20px;">
                         <h1 style="color: #e67e22; margin: 0; font-size: 28px; font-weight: 800; letter-spacing: 1px;">
@@ -1363,10 +1363,10 @@ class UIEngine:
                 outputs=[signal_table, market_table, status_display, log_display]
             )
 
-        # 把 css 挂载到 ui 对象上，方便其他引擎读取
-        ui.custom_css = self.theme_css
+        # 把 css 挂载到 demo 对象上，方便其他引擎读取
+        demo.custom_css = self.theme_css
 
-        return ui
+        return demo
 
 
 # =====================================================
