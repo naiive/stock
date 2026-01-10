@@ -75,4 +75,4 @@ deactivate
 
 欢迎提交 Issue/PR 共同完善策略与指标生态。
 
-本项目采用 MIT 许可协议，详见 LICENSE（若未包含，可按需补充）。
+本项目采用 MIT 许可协议，详见 LICENSE。
