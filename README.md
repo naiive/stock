@@ -69,13 +69,6 @@ pip install pandas numpy sqlalchemy pymysql akshare aiohttp requests
 - `aroon_oscillator`：Aroon 新低判断；
 
 
-## 运行与导出结果
-
-- 扫描模式：
-  - 全量：`SAMPLE_SIZE = 0`
-  - 抽样：`SAMPLE_SIZE = 100`（随机抽取 100 只用于开发调试）
-- 导出文件：`data/stocks/YYYYMMDD/stock-*.csv`
-
 ---
 
 ## 贡献 & 许可
