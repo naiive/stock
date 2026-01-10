@@ -60,7 +60,7 @@ deactivate
 
 ---
 
-## 策略清单与说明（conf/registry.py）
+## 策略清单与说明
 
 已内置并注册的策略（可在 `STRATEGY_CONFIG.RUN_STRATEGY` 中选择）：
 
