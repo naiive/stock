@@ -49,7 +49,7 @@
 
 ```bash
 
-~/Desktop $ python3.11 -m venv ./asian-quant/venv311
+python3.11 -m venv ./asian-quant/venv311
 
 source ./asian-quant/venv311/bin/activate
 
