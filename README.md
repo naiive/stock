@@ -49,9 +49,9 @@
 
 ```bash
 
-~/Desktop $ python3.11 -m venv /Users/xxx/Desktop/stock/venv311
+~/Desktop $ python3.11 -m venv /Users/xxx/Desktop/asian-quant/venv311
 
-source /Users/xxx/Desktop/stock/venv311/bin/activate
+source /Users/xxx/Desktop/asian-quant/venv311/bin/activate
 
 deactivate
 
