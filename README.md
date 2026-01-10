@@ -49,13 +49,13 @@
 
 ```bash
 
-~/Desktop $ python3.11 -m venv /Users/xxx/Desktop/asian-quant/venv311
+~/Desktop $ python3.11 -m venv ./asian-quant/venv311
 
-source /Users/xxx/Desktop/asian-quant/venv311/bin/activate
+source ./asian-quant/venv311/bin/activate
+
+pip install -r requirements.txt
 
 deactivate
-
-pip install pandas numpy sqlalchemy pymysql akshare aiohttp requests
 ```
 
 ---
