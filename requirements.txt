@@ -1,7 +1,7 @@
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
-akshare==1.18.8
+akshare==1.18.9
 attrs==25.4.0
 beautifulsoup4==4.14.3
 certifi==2026.1.4
@@ -38,7 +38,7 @@ tqdm==4.67.1
 twelvedata==1.2.25
 typing_extensions==4.15.0
 tzdata==2025.3
-urllib3==2.6.2
+urllib3==2.6.3
 webencodings==0.5.1
 xlrd==2.0.2
 yarl==1.22.0
